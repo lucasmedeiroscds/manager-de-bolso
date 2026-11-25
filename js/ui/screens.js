@@ -213,10 +213,24 @@ function offerRow(g, o) {
   return `<div class="item">
     ${badge(b, 'sm')}
     <div class="grow small"><b>${esc(b.name)}</b> oferece <b>${money(o.fee)}</b> por <b>${esc(p.name)}</b>
-      <div class="muted tiny">Valor de mercado: ${money(p.value)} · expira na semana ${o.expires + 1}</div></div>
+      <div class="muted tiny">Valor de mercado: ${money(p.value)} · expira em ${weeksLeft(g, o)} semana(s)</div></div>
     <button class="btn-sm btn-good icon-btn" data-act="acceptOffer" data-id="${o.id}" aria-label="Aceitar">✓</button>
     <button class="btn-sm btn-bad icon-btn" data-act="rejectOffer" data-id="${o.id}" aria-label="Recusar">${icon('close', 16)}</button>
   </div>`;
+}
+
+// Propostas de compra recebidas por um jogador (da caixa de entrada)
+function offersFor(g, pid) {
+  return g.inbox.filter(m => m.type === 'offer' && m.playerId === pid);
+}
+// Semanas até a proposta expirar (a proposta vale até a semana "expires")
+const weeksLeft = (g, o) => Math.max(1, o.expires - g.round + 1);
+function offerTag(g, pid) {
+  const os = offersFor(g, pid);
+  if (!os.length) return '';
+  const best = os.slice().sort((a, b) => b.fee - a.fee)[0];
+  const w = weeksLeft(g, best);
+  return `<span class="tag warn">📨 ${os.length > 1 ? os.length + ' propostas · ' : ''}${money(best.fee)} · expira em ${w} sem.</span>`;
 }
 
 function lastResults(g, cid, n) {
@@ -251,8 +265,11 @@ export function squadScreen(S) {
   const loanedOut = Object.values(g.players).filter(p => p.loan && p.loan.from === uc.id);
   const avgOvr = Math.round(ps.reduce((s, p) => s + overall(p), 0) / (ps.length || 1));
   const avgAge = (ps.reduce((s, p) => s + p.age, 0) / (ps.length || 1)).toFixed(1);
+  const withOffers = ps.filter(p => offersFor(g, p.id).length);
   return `
   <h1>Elenco</h1>
+  ${withOffers.length ? `<div class="offer-banner" data-act="go" data-to="market" data-tab="offers">${icon('bell', 18)}
+    <div class="grow"><b>${withOffers.length} jogador(es) com proposta de compra</b><div class="tiny muted">Toque no jogador para aceitar ou recusar</div></div>${icon('chevron', 18, 'chev')}</div>` : ''}
   <div class="tiles">
     <div class="tile"><div class="k">${icon('users', 13)} Jogadores</div><div class="v" data-count="${ps.length}">${ps.length}</div></div>
     <div class="tile"><div class="k">${icon('star', 13)} Nota média</div><div class="v">${avgOvr} <span class="tiny muted">· ${avgAge}a</span></div></div>
@@ -264,8 +281,9 @@ export function squadScreen(S) {
   </div>
   <div class="list stagger">
     ${ps.map(p => playerRow(p, {
-      sub: `${lineup.has(p.id) ? '<span class="tag good">Titular</span>' : ''} <span>${money(p.value)}</span>`,
-      right: ring(p.fitness, 38)
+      sub: `${lineup.has(p.id) ? '<span class="tag good">Titular</span>' : ''} <span>${money(p.value)}</span> ${offerTag(g, p.id)}`,
+      right: ring(p.fitness, 38),
+      extra: offersFor(g, p.id).length ? 'style="background:linear-gradient(90deg, rgba(255,181,71,.14), transparent 70%)"' : ''
     })).join('')}
   </div>
   ${loanedOut.length ? `<h3>Emprestados a outros clubes</h3><div class="list">${loanedOut.map(p => playerRow(p, { sub: 'no ' + esc(club(g, p.clubId).name) })).join('')}</div>` : ''}`;
@@ -283,7 +301,9 @@ export function playerModal(S, id) {
   const A = [['Finalização', 'fin'], ['Passe', 'pas'], ['Defesa', 'def'], ['Força', 'for'], ['Resistência', 'res'], ['Goleiro', 'gk']];
   let actions = '';
   if (mine) {
+    const os = offersFor(g, p.id);
     actions = `
+      ${os.length ? `<h3>Propostas de compra</h3><div class="list">${os.map(o => offerRow(g, o)).join('')}</div>` : ''}
       <div class="grid2 mt">
         <button data-act="toggleList" data-id="${p.id}">${icon('coin', 17)} ${p.listed ? 'Tirar da venda' : 'Pôr à venda'}</button>
         <button data-act="renew" data-id="${p.id}">${icon('edit', 17)} Renovar</button>
@@ -504,16 +524,24 @@ function cupsView(S) {
   const g = S.game;
   const cups = g.cups || [];
   if (!cups.length) return '<p class="muted">As copas começam na próxima temporada.</p>';
-  const mine = cups.filter(c => c.teams.includes(g.userClubId));
-  const cid = S.params.cup || (mine[0] || cups.find(c => c.type === 'continental') || cups[0]).id;
-  const cup = cups.find(c => c.id === cid) || cups[0];
-  const opt = c => `<option value="${esc(c.id)}" ${c.id === cup.id ? 'selected' : ''}>${esc(c.name)}${c.champion ? ' ✔' : ''}</option>`;
-  const sel = `<select class="mb" data-change="tableCup">
-    ${mine.length ? `<optgroup label="Suas copas">${mine.map(opt).join('')}</optgroup>` : ''}
-    <optgroup label="Mundiais e continentais">${cups.filter(c => c.type !== 'national').map(opt).join('')}</optgroup>
-    <optgroup label="Copas nacionais">${cups.filter(c => c.type === 'national').map(opt).join('')}</optgroup>
-  </select>`;
-  let html = sel;
+  // Só as copas do seu clube: as que ele disputa e as que pode disputar
+  // (copa nacional do seu país, continentais do seu continente e o Mundial)
+  const ul = userLeague(g);
+  const playing = cups.filter(c => c.teams.includes(g.userClubId));
+  const possible = cups.filter(c => !playing.includes(c) && (
+    (c.type === 'national' && c.leagueId === ul.id) ||
+    (c.type === 'continental' && (c.conts || []).includes(ul.continent)) ||
+    c.type === 'world'));
+  const list = [...playing, ...possible];
+  if (!list.length) return '<p class="muted">Nenhuma copa disponível para o seu clube nesta temporada.</p>';
+  const cid = S.params.cup && list.some(c => c.id === S.params.cup) ? S.params.cup : list[0].id;
+  const cup = list.find(c => c.id === cid);
+  const kind = c => c.type === 'national' ? 'Copa nacional' : c.type === 'world' ? 'Mundial' : 'Continental';
+  const chip = (c, on) => `<div class="comp-card cup-pick ${c.id === cup.id ? 'on' : ''}" data-act="go" data-to="table" data-tab="cups" data-cup="${esc(c.id)}">
+      <div class="k">${icon('trophy', 12)} ${kind(c)}</div><div class="v ellipsis">${esc(c.name)}</div>
+      <div class="tiny ${on ? 'good' : 'muted'}">${on ? '● Disputando' : 'Pode disputar se se classificar'}</div></div>`;
+  let html = `<div class="hscroll">${playing.map(c => chip(c, true)).join('')}${possible.map(c => chip(c, false)).join('')}</div>`;
+  if (!playing.includes(cup)) html += `<p class="small muted">Seu clube não está nesta edição. ${cup.type === 'world' ? 'Vença a copa continental para disputar o Mundial.' : cup.type === 'national' ? '' : 'As vagas vêm da classificação da liga na temporada anterior.'}</p>`;
   if (cup.champion) {
     const c = club(g, cup.champion);
     html += `<div class="card hl center">${badge(c, 'lg')}<h2 style="margin-top:6px">🏆 ${esc(c.name)}</h2><p class="small muted">Campeão da ${esc(cup.name)} ${g.season}</p></div>`;

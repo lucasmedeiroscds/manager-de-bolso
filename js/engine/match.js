@@ -361,9 +361,13 @@ export class Match {
     for (const t of this.teams) {
       const st = STYLES[t.club.style] || STYLES['Equilibrado'];
       const mk = MARKING[t.club.marking] || MARKING['Média'];
-      for (const { id } of t.onField) {
+      for (const { id, slot } of t.onField) {
         const p = this.P(id);
-        const loss = K.TIRE * st.tire * mk.tire * (1.4 - p.attrs.res / 100);
+        // Goleiro corre bem menos: cansa ~1/4 de um jogador de linha
+        // (e não depende da resistência, que é baixa no cadastro de goleiros)
+        const loss = slot === 'GOL'
+          ? K.TIRE * 0.22
+          : K.TIRE * st.tire * mk.tire * (1.4 - p.attrs.res / 100);
         p.fitness = Math.max(10, p.fitness - loss);
       }
     }

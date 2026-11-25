@@ -470,7 +470,13 @@ label { display: block; font-size: 12px; color: var(--muted); margin: 10px 0 5px
 }
 .match-ctrl button { flex: 1; min-height: 50px; border-radius: 16px; font-size: 13px; font-weight: 700; flex-direction: column; gap: 2px; border: 0; background: rgba(255, 255, 255, .05); }
 .match-ctrl button.primary { background: var(--accent); color: var(--accent-text); }
-.match-ctrl .btn-main { flex-direction: row; min-height: 52px; }
+/* botão "Continuar" no fim do jogo: mantém o visual do botão principal */
+.match-ctrl button.btn-main {
+  flex-direction: row; gap: 8px; min-height: 54px; border-radius: 16px;
+  font-family: var(--head); font-weight: 800; font-style: italic; font-size: 19px; letter-spacing: .03em; text-transform: uppercase;
+  color: var(--accent-text); background: linear-gradient(100deg, #e2ff7a, var(--accent) 45%, #8ef000);
+  box-shadow: var(--glow);
+}
 
 .pitch {
   position: relative; width: 100%; aspect-ratio: 68 / 100; max-height: 54vh; min-height: 360px; margin: 0 auto 10px;
@@ -532,7 +538,13 @@ label { display: block; font-size: 12px; color: var(--muted); margin: 10px 0 5px
 .bench { display: flex; gap: 8px; overflow-x: auto; padding: 8px 0 4px; scrollbar-width: none; }
 .bench::-webkit-scrollbar { display: none; }
 .bench .bn { flex: 0 0 auto; min-height: 58px; padding: 7px 12px; font-size: 13px; text-align: left; flex-direction: column; align-items: flex-start; line-height: 1.2; gap: 1px; border-radius: 14px; }
-.bench .bn.ready { border-color: var(--accent); background: rgba(196, 255, 61, .14); box-shadow: 0 0 0 1px rgba(196, 255, 61, .4); animation: pulse2 1.2s infinite; }
+.bench .bn.ready { border-color: var(--line2); }
+.bench .bn.same { border-color: var(--accent); background: rgba(196, 255, 61, .16); box-shadow: 0 0 0 1px rgba(196, 255, 61, .45); animation: pulse2 1.2s infinite; }
+.bench .bn.near { border-color: rgba(46, 230, 255, .5); background: rgba(46, 230, 255, .08); }
+.bench .bn.other { opacity: .45; }
+.bn-tag { font-size: 9.5px; font-weight: 800; text-transform: uppercase; letter-spacing: .06em; color: var(--accent); }
+.bn-tag.near { color: var(--accent2); }
+.sub-hint { margin-top: 8px; padding: 8px 12px; border-radius: 12px; font-size: 12.5px; background: rgba(196, 255, 61, .08); border: 1px dashed rgba(196, 255, 61, .45); display: flex; align-items: center; gap: 6px; flex-wrap: wrap; }
 @keyframes pulse2 { 50% { box-shadow: 0 0 0 3px rgba(196, 255, 61, .2); } }
 .sbar { display: grid; grid-template-columns: 34px 1fr 34px; gap: 8px; align-items: center; margin: 9px 0; font-size: 14px; }
 .sbar b { text-align: center; font-family: var(--head); font-size: 16px; }
@@ -565,6 +577,17 @@ label { display: block; font-size: 12px; color: var(--muted); margin: 10px 0 5px
 .menu-item .ic-box { width: 40px; height: 40px; border-radius: 12px; display: flex; align-items: center; justify-content: center; background: rgba(196, 255, 61, .1); color: var(--accent); flex: 0 0 auto; }
 .section-title { display: flex; align-items: center; justify-content: space-between; margin: 18px 0 10px; }
 .section-title h3 { margin: 0; flex: 1; }
+
+/* escolha de copa (aba Copas) */
+.cup-pick { flex: 0 0 62%; }
+.cup-pick.on { border-color: var(--accent); background: linear-gradient(135deg, rgba(196, 255, 61, .2), rgba(196, 255, 61, .05)); box-shadow: 0 0 0 1px rgba(196, 255, 61, .4); }
+
+/* aviso de propostas de compra no Elenco */
+.offer-banner {
+  display: flex; align-items: center; gap: 10px; padding: 12px 14px; margin-bottom: 12px; border-radius: 16px; cursor: pointer;
+  background: linear-gradient(90deg, rgba(255, 181, 71, .2), rgba(255, 181, 71, .05)); border: 1px solid rgba(255, 181, 71, .5);
+  color: #ffe0b0; animation: enter .4s both; position: relative; overflow: hidden;
+}
 
 /* ---------- Carreira do técnico ---------- */
 .coach-hero {

@@ -334,7 +334,11 @@ export class PitchAnimator {
       this.ball.y = lerp(this.ball.y, cp.y + d * 1.6, Math.min(1, dt * 12));
     }
 
-    this.updatePlayers(dt, t, a);
+    // Relógio parado (intervalo, pausa, fim de jogo) e nenhuma jogada em
+    // andamento: todos ficam parados no lugar
+    const m = this.m;
+    const frozen = !this.cur && !this.queue.length && (!this.S.matchRunning || (m && m.finished));
+    if (!frozen) this.updatePlayers(dt, t, a);
     this.render();
   }
 

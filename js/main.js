@@ -180,6 +180,7 @@ function tick() {
   }
   if (m.finished) {
     stopMatchLoop();
+    S.subOut = null;
     for (const x of S.prep.matches) x.runToEnd();
     return render(true);
   }
@@ -337,8 +338,8 @@ const ACTIONS = {
     if (r.counter) { const i = document.getElementById('offer'); if (i) i.value = r.counter; }
   },
   loanIn: d => result(loanIn(S.game, S.game.players[d.id]), d.id),
-  acceptOffer: d => result(acceptOffer(S.game, d.id)),
-  rejectOffer: d => { rejectOffer(S.game, d.id); render(true); },
+  acceptOffer: d => { UI.closeModal(); result(acceptOffer(S.game, d.id)); },
+  rejectOffer: d => { UI.closeModal(); rejectOffer(S.game, d.id); UI.toast('Proposta recusada.'); autosave(); render(true); },
   editPlayer: d => UI.openModal(SC.editPlayerModal(S, d.id)),
   savePlayerEdit: d => {
     const p = S.game.players[d.id];
@@ -395,7 +396,7 @@ const ACTIONS = {
   // Partida
   matchPause: () => { if (S.matchRunning) stopMatchLoop(); else startMatchLoop(); },
   matchSpeed: () => { S.matchSpeed = (S.matchSpeed + 1) % 3; if (S.matchRunning) startMatchLoop(); render(true); },
-  matchSkip: () => { stopMatchLoop(); for (const x of S.prep.matches) x.runToEnd(); render(); },
+  matchSkip: () => { stopMatchLoop(); S.subOut = null; for (const x of S.prep.matches) x.runToEnd(); render(); },
   matchTab: d => { S.matchTab = d.v; render(true); },
   matchTactics: () => { stopMatchLoop(); UI.openModal(matchTacticsModal(S)); },
   matchTactic: d => { userClub(S.game)[d.k] = d.v; S.prep.userMatch.dirty = true; UI.updateModal(matchTacticsModal(S)); },

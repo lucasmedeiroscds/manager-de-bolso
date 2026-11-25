@@ -6,7 +6,7 @@
 // pode deslizar pelo campo com animação.
 // =============================================================
 import { esc, money, rnd } from '../util.js';
-import { effectiveRating } from '../engine/ratings.js';
+import { effectiveRating, positionFit } from '../engine/ratings.js';
 import { badge } from './ui.js';
 import { resultRow, tacticChips } from './screens.js';
 import { ceremonyBlock } from './awards-screen.js';
@@ -79,13 +79,22 @@ function benchHTML(S, m) {
   const t = userTeam(S, m);
   const list = t.bench.filter(id => !t.used.has(id));
   const out = S.subOut ? t.onField.find(f => f.id === S.subOut) : null;
+  // Com alguém selecionado para sair: quem joga na mesma posição aparece
+  // primeiro e em destaque; depois quem se adapta bem; o resto fica apagado
+  const fit = id => out ? positionFit(S.game.players[id].pos, out.slot) : 0;
+  const ordered = out ? list.slice().sort((a, b) => fit(b) - fit(a) || effectiveRating(S.game.players[b], out.slot) - effectiveRating(S.game.players[a], out.slot)) : list;
+  const outP = out ? S.game.players[out.id] : null;
   return `<div class="row between"><h3 style="margin:0">Reservas · ${t.subsLeft} troca(s)</h3>
     <span class="tiny muted">${out ? 'Agora toque em quem entra' : 'Toque num jogador seu no campo para trocar'}</span></div>
-  <div class="bench">${list.map(id => {
+  ${out ? `<div class="sub-hint">${icon('swap', 15)} Saindo: <b>${esc(outP.name)}</b> <span class="pos pos-${out.slot}" style="width:auto;padding:2px 6px">${out.slot}</span> · em destaque quem faz a mesma função</div>` : ''}
+  <div class="bench">${ordered.map(id => {
     const p = S.game.players[id];
     const r = Math.round(effectiveRating(p, out ? out.slot : p.pos));
-    return `<button class="bn ${out ? 'ready' : ''}" data-act="${out ? 'subIn' : 'benchInfo'}" data-id="${id}">
-      <b>${p.pos}</b> ${esc(surname(p.name))}<span class="tiny">E:${Math.round(p.fitness)} · ${r}</span></button>`;
+    const f = fit(id);
+    const cls = !out ? '' : f >= 1 ? 'ready same' : f >= 0.85 ? 'ready near' : 'ready other';
+    const lbl = !out ? '' : f >= 1 ? '<span class="bn-tag">Mesma função</span>' : f >= 0.85 ? '<span class="bn-tag near">Adaptável</span>' : '';
+    return `<button class="bn ${cls}" data-act="${out ? 'subIn' : 'benchInfo'}" data-id="${id}">
+      ${lbl}<b>${p.pos}</b> ${esc(surname(p.name))}<span class="tiny">E:${Math.round(p.fitness)} · nota ${r}</span></button>`;
   }).join('') || '<span class="muted small">Sem reservas disponíveis.</span>'}</div>`;
 }
 
