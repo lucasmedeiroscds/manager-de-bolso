@@ -1,0 +1,7 @@
+# Arquivos que não vão para o GitHub
+# (dados brutos do Transfermarkt: o jogo usa só o data/mundo.json gerado)
+dados-origem/
+# configurações locais do editor/assistente
+.claude/
+node_modules/
+*.log

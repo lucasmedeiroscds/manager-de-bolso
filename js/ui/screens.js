@@ -1,0 +1,715 @@
+// =============================================================
+// screens.js — as telas do jogo (cada função devolve HTML)
+// =============================================================
+import { esc, money } from '../util.js';
+import { overall, effectiveRating, POS_NAMES, POSITIONS } from '../engine/ratings.js';
+import { FORMATIONS, STYLES, MARKING, FOCUS, clubPlayers, teamStrength, isAvailable } from '../engine/tactics.js';
+import { standings, userClub, userLeague, userFixture, leagueRounds, nextUserMatch } from '../engine/season.js';
+import { cupStatus, groupTable, cupScorers } from '../engine/cups.js';
+import { windowOpen, askingPrice, wageAsk, clubById } from '../engine/market.js';
+import { weeklyWages } from '../engine/finance.js';
+import { TRAIN_FOCUS, TRAIN_INTENSITY } from '../engine/evolution.js';
+import { SLOTS, slotInfo } from '../storage.js';
+import { badge, posTag, ovrTag, bar, playerRow, statusTags, ring, radar } from './ui.js';
+import { icon } from './icons.js';
+import { careerScreen, careerCard } from './career-screen.js';
+import { layout } from './match-screen.js';
+import { ovrClass } from '../engine/ratings.js';
+
+const club = (g, id) => clubById(g, id);
+const stars = rep => '★'.repeat(Math.max(1, Math.min(5, Math.round((rep - 25) / 15)))).padEnd(5, '☆');
+const CONT_ORDER = ['América do Sul', 'Europa', 'América do Norte', 'Ásia', 'África', 'Oceania', 'Outros'];
+const FLAG = {
+  'Brasil': '🇧🇷', 'Argentina': '🇦🇷', 'México': '🇲🇽', 'Estados Unidos': '🇺🇸', 'Inglaterra': '🏴', 'Espanha': '🇪🇸',
+  'Itália': '🇮🇹', 'Alemanha': '🇩🇪', 'França': '🇫🇷', 'Portugal': '🇵🇹', 'Holanda': '🇳🇱', 'Bélgica': '🇧🇪',
+  'Turquia': '🇹🇷', 'Escócia': '🏴', 'Grécia': '🇬🇷', 'Rússia': '🇷🇺', 'Ucrânia': '🇺🇦', 'Áustria': '🇦🇹',
+  'Suíça': '🇨🇭', 'Dinamarca': '🇩🇰', 'Noruega': '🇳🇴', 'Suécia': '🇸🇪', 'Polônia': '🇵🇱', 'Rep. Tcheca': '🇨🇿',
+  'Croácia': '🇭🇷', 'Sérvia': '🇷🇸', 'Romênia': '🇷🇴', 'Japão': '🇯🇵', 'Coreia do Sul': '🇰🇷',
+  'Arábia Saudita': '🇸🇦', 'Austrália': '🇦🇺'
+};
+export const flag = c => FLAG[c] || '🏳️';
+
+// Lista de ligas agrupadas por continente para um <select>
+function leagueOptions(leagues, selected, withAll = false) {
+  const groups = {};
+  for (const l of leagues) (groups[l.continent] = groups[l.continent] || []).push(l);
+  const conts = Object.keys(groups).sort((a, b) => CONT_ORDER.indexOf(a) - CONT_ORDER.indexOf(b));
+  return (withAll ? `<option value="ALL" ${selected === 'ALL' ? 'selected' : ''}>🌍 Todas as ligas</option>` : '') +
+    conts.map(c => `<optgroup label="${esc(c)}">${groups[c].sort((a, b) => a.country.localeCompare(b.country)).map(l =>
+      `<option value="${esc(l.id)}" ${l.id === selected ? 'selected' : ''}>${flag(l.country)} ${esc(l.country)} — ${esc(l.name)}</option>`).join('')}</optgroup>`).join('');
+}
+
+// ---------------------------------------------------------------
+// TELA INICIAL
+// ---------------------------------------------------------------
+export function startScreen(S) {
+  const auto = slotInfo('auto');
+  const db = S.db;
+  const kinds = [['world', '🌍 Mundo real'], ['fictional', '🎲 Liga fictícia'], ...(S.customDB ? [['custom', '📥 Importado']] : [])];
+  return `
+  <div class="splash">
+    <div class="ballart"></div>
+    <h1>Manager de Bolso</h1>
+    <p class="muted">31 ligas · 42 copas · 15 mil jogadores reais</p>
+  </div>
+  ${auto ? `<button class="btn-main mb" data-act="continue" style="flex-direction:column;gap:0;min-height:68px">
+      <span class="row">${icon('play', 20)} Continuar</span>
+      <span style="font-size:12px;font-style:normal;font-weight:600;text-transform:none;opacity:.75">${esc(auto.label)}</span></button>` : ''}
+  <div class="list stagger">
+    <div class="item tap menu-item" data-act="go" data-to="chooseClub" ${db ? '' : 'style="opacity:.5;pointer-events:none"'}><span class="ic-box">${icon('bolt')}</span><div class="grow"><b>Novo jogo</b><div class="small muted">Escolha um clube em qualquer continente</div></div>${icon('chevron', 18, 'chev')}</div>
+    <div class="item tap menu-item" data-act="loadMenu"><span class="ic-box">${icon('folder')}</span><div class="grow"><b>Carregar jogo</b><div class="small muted">Espaços salvos neste aparelho</div></div>${icon('chevron', 18, 'chev')}</div>
+    <div class="item tap menu-item" data-act="importSave"><span class="ic-box">${icon('download')}</span><div class="grow"><b>Importar jogo de arquivo</b><div class="small muted">Backup exportado antes</div></div>${icon('chevron', 18, 'chev')}</div>
+  </div>
+  <div class="card mt">
+    <h3 style="margin-top:0">Banco de dados para novo jogo</h3>
+    <div class="chips mb">${kinds.map(([k, l]) => `<button class="chip ${S.dbKind === k ? 'on' : ''}" data-act="setDB" data-v="${k}">${l}</button>`).join('')}</div>
+    ${db ? `<p><b>${esc(db.name)}</b><br><span class="small muted">${(db.leagues || [1]).length} liga(s) · ${db.clubs.length} clubes · ${Object.keys(db.players).length.toLocaleString('pt-BR')} jogadores</span></p>` : '<p class="muted">Carregando banco de dados…</p>'}
+    ${db && db.fictional ? `<div class="fict">⚠️ Clubes e jogadores <b>fictícios</b> (exemplo).</div>` : ''}
+    ${db && S.dbKind === 'world' ? `<p class="tiny muted">${esc(db.source || '')}</p>` : ''}
+    <div class="btn-row wrap">
+      <button class="btn-sm" data-act="importDB">📥 Importar JSON/CSV</button>
+      <button class="btn-sm" data-act="exportDBcsv" ${db ? '' : 'disabled'}>📤 Exportar CSV</button>
+    </div>
+  </div>`;
+}
+
+// ---------------------------------------------------------------
+// ESCOLHA DO CLUBE: continente → país/liga → clube
+// ---------------------------------------------------------------
+export function chooseClubScreen(S) {
+  const db = S.db;
+  const leagues = db.leagues && db.leagues.length ? db.leagues
+    : [{ id: 'L1', name: db.name, country: 'Brasil', continent: 'América do Sul', clubIds: db.clubs.map(c => c.id) }];
+  const { cont, league, q } = S.params;
+  const back = league ? `data-act="go" data-to="chooseClub" data-cont="${esc(cont || '')}"` : cont ? `data-act="go" data-to="chooseClub"` : `data-act="go" data-to="start"`;
+  let body = '';
+  const clubRow = c => {
+    const l = leagues.find(x => x.clubIds.includes(c.id));
+    return `<div class="item tap" data-act="pickClub" data-id="${c.id}" style="background:linear-gradient(90deg, color-mix(in srgb, ${esc(c.colors[0])} 14%, transparent), transparent 55%)">
+      ${badge(c)}
+      <div class="grow"><b>${esc(c.name)}</b><div class="small muted">${l ? flag(l.country) + ' ' + esc(l.name) + ' · ' : ''}Caixa ${money(c.budget)}</div></div>
+      <span class="accent small" style="letter-spacing:1px">${stars(c.rep)}</span></div>`;
+  };
+  if (q) {
+    const term = q.toLowerCase();
+    const found = db.clubs.filter(c => c.name.toLowerCase().includes(term) || (c.fullName || '').toLowerCase().includes(term)).slice(0, 40);
+    body = `<div class="list stagger">${found.map(clubRow).join('') || '<div class="item muted">Nenhum clube encontrado.</div>'}</div>`;
+  } else if (league) {
+    const l = leagues.find(x => x.id === league);
+    const cs = l.clubIds.map(id => db.clubs.find(c => c.id === id)).filter(Boolean).sort((a, b) => b.rep - a.rep);
+    body = `<div class="card" style="display:flex;align-items:center;gap:12px"><span style="font-size:38px">${flag(l.country)}</span>
+      <div><h2 style="margin:0">${esc(l.name)}</h2><div class="small muted">${esc(l.country)} · ${cs.length} clubes · ${l.clubIds.length <= 22 ? 'turno e returno' : 'turno único'}</div></div></div>
+      <div class="list stagger">${cs.map(clubRow).join('')}</div>`;
+  } else if (cont) {
+    const ls = leagues.filter(l => l.continent === cont).sort((a, b) => a.country.localeCompare(b.country));
+    body = `<h2>${esc(cont)}</h2><div class="list stagger">${ls.map(l => `
+      <div class="item tap" data-act="go" data-to="chooseClub" data-cont="${esc(cont)}" data-league="${esc(l.id)}">
+        <span style="font-size:28px">${flag(l.country)}</span>
+        <div class="grow"><b>${esc(l.country)}</b><div class="small muted">${esc(l.name)} · ${l.clubIds.length} clubes</div></div>${icon('chevron', 18, 'chev')}
+      </div>`).join('')}</div>`;
+  } else {
+    if (leagues.length === 1) return chooseClubScreen({ ...S, params: { league: leagues[0].id, cont: leagues[0].continent } });
+    const conts = [...new Set(leagues.map(l => l.continent))].sort((a, b) => CONT_ORDER.indexOf(a) - CONT_ORDER.indexOf(b));
+    const grad = { 'América do Sul': '#2fe07f,#ffd25a', 'América do Norte': '#4cb4ff,#ff4d6d', 'Europa': '#3b6bff,#2ee6ff', 'Ásia': '#ff4d6d,#ffb547', 'África': '#ffb547,#2fe07f', 'Oceania': '#2ee6ff,#c4ff3d' };
+    body = `<div class="grid2">${conts.map((c, i) => {
+      const ls = leagues.filter(l => l.continent === c);
+      return `<div class="comp-card" style="flex:none;animation:enter .4s ${i * 0.05}s both;background:linear-gradient(140deg, color-mix(in srgb, ${(grad[c] || '#4cb4ff,#c4ff3d').split(',')[0]} 35%, transparent), color-mix(in srgb, ${(grad[c] || '#4cb4ff,#c4ff3d').split(',')[1]} 12%, transparent))" data-act="go" data-to="chooseClub" data-cont="${esc(c)}">
+        <div style="font-size:22px">${ls.slice(0, 5).map(l => flag(l.country)).join('')}</div>
+        <div class="v">${esc(c)}</div><div class="k">${ls.length} liga(s)</div></div>`;
+    }).join('')}</div>`;
+  }
+  return `
+  <div class="row between mb"><h1 style="margin:0">Escolha seu clube</h1><button class="btn-sm" ${back}>${icon('back', 16)} Voltar</button></div>
+  <div class="search">${icon('search', 18)}<input id="club-q" placeholder="Buscar clube pelo nome" value="${esc(q || '')}" data-change="clubSearch"></div>
+  <div class="mt">${body}</div>`;
+}
+
+// ---------------------------------------------------------------
+// INÍCIO (painel do clube)
+// ---------------------------------------------------------------
+export function hubScreen(S) {
+  const g = S.game, uc = userClub(g), ul = userLeague(g);
+  // Técnico demitido: só dá para escolher um novo clube
+  if (g.coach && g.coach.fired) return careerScreen(S);
+  const tab = standings(g, ul.id);
+  const pos = tab.findIndex(s => s.id === uc.id) + 1;
+  const nm = nextUserMatch(g);
+  let next = '';
+  if (nm) {
+    const fx = nm.f;
+    const h = club(g, fx.h), a = club(g, fx.a);
+    const opp = fx.h === uc.id ? a : h;
+    const oppInfo = nm.kind === 'league'
+      ? (g.round ? (tab.findIndex(s => s.id === opp.id) + 1) + 'º lugar, ' : '')
+      : (opp.leagueId !== uc.leagueId ? flag(opp.country) + ' ' : '');
+    const where = nm.neutral ? 'Campo neutro' : fx.h === uc.id ? 'Em casa' : 'Fora de casa';
+    const sh = teamStrength(g, h), sa = teamStrength(g, a);
+    const sharePct = Math.round(Math.pow(sh, 3) / (Math.pow(sh, 3) + Math.pow(sa, 3)) * 100);
+    next = `
+    <div class="match-hero" style="--h1:${esc(h.colors[0] === '#ffffff' ? h.colors[1] : h.colors[0])};--a1:${esc(a.colors[0] === '#ffffff' ? a.colors[1] : a.colors[0])}">
+      <div class="mh-comp">
+        <span class="lbl">${nm.kind === 'cup' ? icon('trophy', 16) : icon('calendar', 16)} ${esc(nm.name)}</span>
+        <span class="tag ${nm.kind === 'cup' ? 'warn' : ''}">${esc(nm.stage)}</span>
+      </div>
+      <div class="mh-teams">
+        <div class="mh-team">${badge(h, 'xl')}<b class="ellipsis">${esc(h.name)}</b></div>
+        <div class="mh-vs">VS</div>
+        <div class="mh-team">${badge(a, 'xl')}<b class="ellipsis">${esc(a.name)}</b></div>
+      </div>
+      <div class="mh-meta">
+        <span>${icon('stadium', 15)} ${where}${h.stadiumName && !nm.neutral ? ' · ' + esc(h.stadiumName) : ''}</span>
+        ${nm.kind === 'league' && g.round ? `<span>${icon('chart', 15)} Rival em ${oppInfo.replace(', ', '')}</span>` : oppInfo ? `<span>${oppInfo}</span>` : ''}
+      </div>
+      <div class="strength"><b>${sh}</b><div><div class="duel"><i style="width:${sharePct}%"></i></div><div class="tiny muted center" style="margin-top:3px">FORÇA DOS TIMES</div></div><b>${sa}</b></div>
+      ${nm.kind === 'cup' ? `<p class="tiny muted center" style="position:relative">Meio de semana${userFixture(g) ? ' · o jogo da liga vem depois' : ''}${!nm.stage.startsWith('Grupo') ? ' · empate vai para os pênaltis' : ''}</p>` : ''}
+      <button class="btn-main" data-act="playRound">${icon('play', 20)} Jogar partida</button>
+      <button class="btn-block btn-sm mt btn-ghost" data-act="go" data-to="tactics">${icon('tactics', 16)} Ajustar escalação</button>
+    </div>`;
+  } else {
+    const leagueOver = g.round >= leagueRounds(g, ul.id);
+    next = `<div class="match-hero">
+      <div class="mh-comp"><span class="lbl">${icon('calendar', 16)} ${leagueOver ? 'Sua liga terminou' : 'Sem jogo nesta semana'}</span></div>
+      <p class="small" style="position:relative;margin:12px 0">${leagueOver ? `Você ficou em <b class="accent">${pos}º</b>. ` : ''}Outras ligas e copas do mundo continuam.</p>
+      <button class="btn-main" data-act="advanceWeek">${icon('fast', 20)} Avançar semana</button>
+      ${leagueOver ? `<button class="btn-block btn-sm mt btn-ghost" data-act="advanceSeason">${icon('skip', 16)} Avançar até a próxima temporada</button>` : ''}
+    </div>`;
+  }
+  const cups = cupStatus(g, uc.id);
+  const cupsCard = cups.length ? `<div class="section-title"><h3>Suas competições</h3></div><div class="hscroll">${cups.map(({ cup, status }) =>
+    `<div class="comp-card" data-act="go" data-to="table" data-tab="cups" data-cup="${esc(cup.id)}">
+      <div class="k">${icon('trophy', 13)} ${cup.type === 'national' ? 'Copa nacional' : cup.type === 'world' ? 'Mundial' : 'Continental'}</div>
+      <div class="v ellipsis">${esc(cup.name)}</div><div class="small ${status.includes('Campeão') ? 'accent' : status.startsWith('Elimin') ? 'bad' : 'muted'}">${esc(status)}</div></div>`).join('')}</div>` : '';
+  const offers = g.inbox.filter(m => m.type === 'offer');
+  const msgs = g.inbox.filter(m => m.type === 'msg').slice(0, 6);
+  const last = lastResults(g, uc.id, 5);
+  const c1 = uc.colors[0] === '#ffffff' ? uc.colors[1] : uc.colors[0];
+  return `
+  <div class="club-head" style="--club1:${esc(c1)}">
+    ${badge(uc, 'lg')}
+    <div class="grow">
+      <div class="title ellipsis">${esc(uc.name)}</div>
+      <div class="small muted" style="margin-top:4px">${flag(ul.country)} ${esc(ul.name)} · ${g.season}</div>
+    </div>
+    ${g.round ? `<div class="center"><div class="num" style="font-size:30px;font-style:italic;line-height:1">${pos}º</div><div class="tiny muted">${tab[pos - 1].pts} PTS</div></div>` : ''}
+  </div>
+  <div class="tiles">
+    <div class="tile"><div class="k">${icon('coin', 13)} Caixa</div><div class="v ${uc.budget < 0 ? 'bad' : ''}" data-count="${uc.budget}" data-fmt="money">${money(uc.budget)}</div></div>
+    <div class="tile"><div class="k">${icon('market', 13)} Mercado</div><div class="v ${windowOpen(g) ? 'good' : 'muted'}">${windowOpen(g) ? 'Aberto' : 'Fechado'}</div></div>
+    <div class="tile"><div class="k">${icon('fire', 13)} Forma</div><div class="v"><span class="form">${last.map(r => `<i class="${r}"></i>`).join('') || '<span class="muted small">—</span>'}</span></div></div>
+  </div>
+  ${next}
+  ${careerCard(S)}
+  ${cupsCard}
+  <div class="list"><div class="item tap menu-item" data-act="go" data-to="awards"><span class="ic-box" style="color:var(--gold);background:rgba(255,210,90,.12)">${icon('medal')}</span><div class="grow"><b>Corrida pelos prêmios</b><div class="small muted">Melhor da liga e Melhor do Mundo</div></div>${icon('chevron', 18, 'chev')}</div></div>
+  ${offers.length ? `<div class="section-title"><h3>Propostas recebidas</h3><span class="tag warn">${offers.length}</span></div><div class="list stagger">${offers.map(o => offerRow(g, o)).join('')}</div>` : ''}
+  <div class="section-title"><h3>Mensagens</h3></div>
+  <div class="list stagger">${msgs.length ? msgs.map(m => `<div class="item small">${icon(/🏆|campeão/.test(m.text) ? 'trophy' : /⚠️/.test(m.text) ? 'bell' : /base/.test(m.text) ? 'star' : 'news', 18)}<span class="grow">${esc(m.text)}</span></div>`).join('') : '<div class="item muted small">Nenhuma mensagem.</div>'}</div>
+  ${g.news.length ? `<div class="section-title"><h3>Mercado da bola</h3></div><div class="list stagger">${g.news.slice(0, 5).map(n => `<div class="item small muted">${icon('swap', 18)}<span class="grow">${esc(n.text)}</span></div>`).join('')}</div>` : ''}`;
+}
+
+function offerRow(g, o) {
+  const p = g.players[o.playerId], b = club(g, o.clubId);
+  if (!p || !b) return '';
+  return `<div class="item">
+    ${badge(b, 'sm')}
+    <div class="grow small"><b>${esc(b.name)}</b> oferece <b>${money(o.fee)}</b> por <b>${esc(p.name)}</b>
+      <div class="muted tiny">Valor de mercado: ${money(p.value)} · expira na semana ${o.expires + 1}</div></div>
+    <button class="btn-sm btn-good icon-btn" data-act="acceptOffer" data-id="${o.id}" aria-label="Aceitar">✓</button>
+    <button class="btn-sm btn-bad icon-btn" data-act="rejectOffer" data-id="${o.id}" aria-label="Recusar">${icon('close', 16)}</button>
+  </div>`;
+}
+
+function lastResults(g, cid, n) {
+  const l = g.leagues.find(x => x.clubIds.includes(cid));
+  const out = [];
+  for (let r = g.round - 1; r >= 0 && out.length < n; r--) {
+    const f = (l.fixtures[r] || []).find(x => (x.h === cid || x.a === cid) && x.r);
+    if (!f) continue;
+    const my = f.h === cid ? f.r.hg : f.r.ag, ot = f.h === cid ? f.r.ag : f.r.hg;
+    out.unshift(my > ot ? 'V' : my < ot ? 'D' : 'E');
+  }
+  return out;
+}
+
+// ---------------------------------------------------------------
+// ELENCO
+// ---------------------------------------------------------------
+export function squadScreen(S) {
+  const g = S.game, uc = userClub(g);
+  const sort = S.params.sort || 'pos';
+  let ps = clubPlayers(g, uc.id);
+  const order = { GOL: 0, ZAG: 1, LAT: 2, VOL: 3, MEI: 4, ATA: 5 };
+  const sorters = {
+    pos: (a, b) => order[a.pos] - order[b.pos] || overall(b) - overall(a),
+    ovr: (a, b) => overall(b) - overall(a),
+    age: (a, b) => a.age - b.age,
+    value: (a, b) => b.value - a.value,
+    fit: (a, b) => a.fitness - b.fitness
+  };
+  ps.sort(sorters[sort]);
+  const lineup = new Set(uc.lineup);
+  const loanedOut = Object.values(g.players).filter(p => p.loan && p.loan.from === uc.id);
+  const avgOvr = Math.round(ps.reduce((s, p) => s + overall(p), 0) / (ps.length || 1));
+  const avgAge = (ps.reduce((s, p) => s + p.age, 0) / (ps.length || 1)).toFixed(1);
+  return `
+  <h1>Elenco</h1>
+  <div class="tiles">
+    <div class="tile"><div class="k">${icon('users', 13)} Jogadores</div><div class="v" data-count="${ps.length}">${ps.length}</div></div>
+    <div class="tile"><div class="k">${icon('star', 13)} Nota média</div><div class="v">${avgOvr} <span class="tiny muted">· ${avgAge}a</span></div></div>
+    <div class="tile"><div class="k">${icon('coin', 13)} Folha/sem</div><div class="v">${money(weeklyWages(g, uc.id))}</div></div>
+  </div>
+  <div class="chips scroll mb">
+    ${[['pos', 'Posição'], ['ovr', 'Nota'], ['age', 'Idade'], ['value', 'Valor'], ['fit', 'Energia']].map(([k, l]) =>
+      `<button class="chip ${sort === k ? 'on' : ''}" data-act="go" data-to="squad" data-sort="${k}">${l}</button>`).join('')}
+  </div>
+  <div class="list stagger">
+    ${ps.map(p => playerRow(p, {
+      sub: `${lineup.has(p.id) ? '<span class="tag good">Titular</span>' : ''} <span>${money(p.value)}</span>`,
+      right: ring(p.fitness, 38)
+    })).join('')}
+  </div>
+  ${loanedOut.length ? `<h3>Emprestados a outros clubes</h3><div class="list">${loanedOut.map(p => playerRow(p, { sub: 'no ' + esc(club(g, p.clubId).name) })).join('')}</div>` : ''}`;
+}
+
+// ---------------------------------------------------------------
+// DETALHE DO JOGADOR (abre num modal)
+// ---------------------------------------------------------------
+export function playerModal(S, id) {
+  const g = S.game, p = g.players[id];
+  if (!p) return '<p>Jogador não encontrado.</p>';
+  const uc = userClub(g);
+  const pc = p.clubId ? club(g, p.clubId) : null;
+  const mine = p.clubId === uc.id;
+  const A = [['Finalização', 'fin'], ['Passe', 'pas'], ['Defesa', 'def'], ['Força', 'for'], ['Resistência', 'res'], ['Goleiro', 'gk']];
+  let actions = '';
+  if (mine) {
+    actions = `
+      <div class="grid2 mt">
+        <button data-act="toggleList" data-id="${p.id}">${icon('coin', 17)} ${p.listed ? 'Tirar da venda' : 'Pôr à venda'}</button>
+        <button data-act="renew" data-id="${p.id}">${icon('edit', 17)} Renovar</button>
+        ${p.loan ? '' : `<button data-act="loanOut" data-id="${p.id}">${icon('swap', 17)} Emprestar</button>`}
+        ${p.loan ? '' : `<button class="btn-bad" data-act="release" data-id="${p.id}">${icon('logout', 17)} Dispensar</button>`}
+      </div>`;
+  } else if (!p.loan || !p.clubId) {
+    const ask = askingPrice(g, p);
+    const wage = wageAsk(g, p, uc);
+    actions = p.clubId ? `
+      <div class="card mt">
+        <div class="small muted">O ${esc(pc.name)} pede cerca de <b>${money(ask)}</b>. Salário pedido: ${money(wage)}/sem.</div>
+        <label>Sua proposta (R$)</label>
+        <input id="offer" type="number" inputmode="numeric" step="10000" value="${ask}">
+        <div class="btn-row mt">
+          <button class="btn-good" data-act="buy" data-id="${p.id}">${icon('coin', 17)} Comprar</button>
+          <button data-act="loanIn" data-id="${p.id}">${icon('swap', 17)} Empréstimo</button>
+        </div>
+        ${windowOpen(g) ? '' : '<p class="tiny warn mt">A janela de transferências está fechada.</p>'}
+      </div>` : `
+      <div class="card mt">
+        <div class="small">Sem clube. Sem taxa de transferência.<br>Salário pedido: <b>${money(wage)}/sem</b> · Luvas: ${money(wage * 4)}</div>
+        <button class="btn-good btn-block mt" data-act="buy" data-id="${p.id}">✍️ Contratar</button>
+      </div>`;
+  }
+  // Carta do jogador: cor pelo nível (ouro 75+, prata 65+, bronze 55+)
+  const ov = overall(p);
+  const tier = ov >= 75 ? 'gold' : ov >= 65 ? 'silver' : ov >= 55 ? 'bronze' : 'basic';
+  const radarKeys = p.pos === 'GOL' ? [['GOL', 'gk'], ['PAS', 'pas'], ['DEF', 'def'], ['FOR', 'for'], ['RES', 'res'], ['FIN', 'fin']]
+    : [['FIN', 'fin'], ['PAS', 'pas'], ['DEF', 'def'], ['FOR', 'for'], ['RES', 'res']];
+  const ss = p.ss && p.ss.j ? p.ss : null;
+  return `
+  <div class="pcard ${tier}">
+    <div class="top">
+      <div class="center" style="min-width:64px"><div class="big">${ov}</div><div class="posl">${p.pos}</div></div>
+      <div class="grow" style="min-width:0">
+        <div class="name ellipsis">${esc(p.name)}</div>
+        <div class="meta">${POS_NAMES[p.pos]} · ${p.age} anos${p.nat ? ' · ' + esc(p.nat) : ''}</div>
+        <div class="meta row" style="gap:6px;margin-top:6px">${pc ? badge(pc, 'sm') + ' ' + esc(pc.name) : 'Sem clube'}${p.loan ? ` <span class="small">(emprestado)</span>` : ''}</div>
+      </div>
+    </div>
+    <div class="tags">${statusTags(p)}${p.fictional ? '<span class="tag warn">Fictício</span>' : ''}</div>
+  </div>
+  <div class="card">
+    <div class="radar-wrap">
+      ${radar(radarKeys.map(([, k]) => p.attrs[k]), radarKeys.map(([l]) => l))}
+      <div>
+        ${A.filter(([, k]) => k !== 'gk' || p.pos === 'GOL').map(([l, k]) => `<div class="attr" style="grid-template-columns:1fr 30px;gap:6px;margin:3px 0"><span class="tiny muted" style="text-transform:uppercase;letter-spacing:.06em">${l}</span><b class="right" style="font-size:15px">${p.attrs[k]}</b><div style="grid-column:1/-1">${bar(p.attrs[k], 99)}</div></div>`).join('')}
+      </div>
+    </div>
+    <div class="attr" style="margin-top:10px"><span class="small">${icon('bolt', 14)} Potencial</span>${bar(p.potential, 99)}<b class="right">${mine || p.age > 23 ? p.potential : '?'}</b></div>
+  </div>
+  <div class="kv mb">
+    <div>${ring(p.fitness, 44)}<span>Energia</span></div>
+    <div><b>${Math.round(p.moral)}</b><span>Moral</span></div>
+    <div><b style="font-size:15px">${money(p.value)}</b><span>Valor</span></div>
+    <div><b style="font-size:15px">${money(p.contract.wage)}</b><span>Salário/sem</span></div>
+    <div><b>${p.contract.years}</b><span>Anos contrato</span></div>
+    <div><b>${p.apps}</b><span>Jogos (carreira)</span></div>
+  </div>
+  ${ss ? `<h3>Temporada ${g.season}</h3><div class="kv mb">
+      <div><b>${ss.j}</b><span>Jogos</span></div>
+      <div><b>${ss.g}</b><span>Gols</span></div>
+      <div><b>${ss.a}</b><span>Assist.</span></div>
+      <div><b class="${ss.r / ss.j >= 7.2 ? 'good' : ''}">${(ss.r / ss.j).toFixed(2)}</b><span>Nota média</span></div>
+      <div><b>${ss.lg}</b><span>Gols na liga</span></div>
+      <div><b>${ss.cs}</b><span>Sem sofrer gol</span></div>
+    </div>` : ''}
+  ${p.trophies && p.trophies.length ? `<h3>Prêmios individuais</h3><div class="list">${p.trophies.slice().reverse().map(t => `<div class="item small" style="min-height:44px">${icon('medal', 18)}<span class="grow">${esc(t)}</span></div>`).join('')}</div>` : ''}
+  <p class="tiny muted">${p.fictional ? 'Jogador fictício (gerado pelo jogo).' : p.realValueEUR ? `Valor real de referência (Transfermarkt, jul/2026): € ${(p.realValueEUR / 1e6).toLocaleString('pt-BR')} mi. Atributos estimados a partir dele.` : ''}
+  ${p.pos !== 'GOL' ? ' Rende em outras posições: ' + POSITIONS.filter(x => x !== p.pos && x !== 'GOL').map(x => `${x} ${Math.round(overall(p, x))}`).join(' · ') : ''}</p>
+  ${actions}
+  <button class="btn-sm btn-block mt btn-ghost" data-act="editPlayer" data-id="${p.id}">${icon('edit', 15)} Editar dados do jogador</button>`;
+}
+
+// Formulário de edição (banco de dados editável)
+export function editPlayerModal(S, id) {
+  const p = S.game.players[id];
+  const f = (l, k, v) => `<div><label>${l}</label><input id="ed-${k}" type="number" min="1" max="99" value="${v}"></div>`;
+  return `<h2>Editar jogador</h2>
+  <p class="small muted">Corrija nomes e atributos. Muda só este jogo salvo.</p>
+  <label>Nome</label><input id="ed-name" value="${esc(p.name)}" maxlength="40">
+  <div class="grid2">
+    <div><label>Posição</label><select id="ed-pos">${POSITIONS.map(x => `<option ${x === p.pos ? 'selected' : ''}>${x}</option>`).join('')}</select></div>
+    ${f('Idade', 'age', p.age)}
+    ${f('Finalização', 'fin', p.attrs.fin)}${f('Passe', 'pas', p.attrs.pas)}
+    ${f('Defesa', 'def', p.attrs.def)}${f('Força', 'for', p.attrs.for)}
+    ${f('Resistência', 'res', p.attrs.res)}${f('Goleiro', 'gk', p.attrs.gk)}
+    ${f('Potencial', 'potential', p.potential)}
+  </div>
+  <button class="btn-main mt" data-act="savePlayerEdit" data-id="${p.id}">Salvar</button>`;
+}
+
+// ---------------------------------------------------------------
+// TÁTICA E ESCALAÇÃO
+// ---------------------------------------------------------------
+export function tacticChips(uc, prefix = 'set') {
+  return `
+  <h3>Estilo de jogo</h3>
+  <div class="chips">${Object.keys(STYLES).map(s => `<button class="chip ${uc.style === s ? 'on' : ''}" data-act="${prefix}Tactic" data-k="style" data-v="${s}">${s}</button>`).join('')}</div>
+  <p class="small muted mb">${STYLES[uc.style].desc}</p>
+  <h3>Marcação</h3>
+  <div class="chips">${Object.keys(MARKING).map(s => `<button class="chip ${uc.marking === s ? 'on' : ''}" data-act="${prefix}Tactic" data-k="marking" data-v="${s}">${s}</button>`).join('')}</div>
+  <p class="small muted mb">${MARKING[uc.marking].desc}</p>
+  <h3>Concentrar ataques</h3>
+  <div class="chips">${Object.keys(FOCUS).map(s => `<button class="chip ${uc.focus === s ? 'on' : ''}" data-act="${prefix}Tactic" data-k="focus" data-v="${s}">${s}</button>`).join('')}</div>
+  <p class="small muted mb">${FOCUS[uc.focus]}</p>`;
+}
+
+export function tacticsScreen(S) {
+  const g = S.game, uc = userClub(g);
+  const slots = FORMATIONS[uc.formation];
+  const tr = uc.training || { focus: 'Equilibrado', intensity: 'Normal' };
+  return `
+  <div class="row between"><h1>Tática</h1><span class="muted">Força <b>${teamStrength(g, uc)}</b></span></div>
+  <h3>Formação</h3>
+  <div class="chips mb">${Object.keys(FORMATIONS).map(f => `<button class="chip ${uc.formation === f ? 'on' : ''}" data-act="setFormation" data-v="${f}">${f}</button>`).join('')}</div>
+  <div class="row between"><h3>Titulares · ${uc.formation}</h3><button class="btn-sm" data-act="autoLineup">✨ Automática</button></div>
+  ${tacticsPitch(S)}
+  <p class="tiny muted center" style="margin-top:-4px">Toque numa posição para trocar o jogador. Nota = rendimento naquela posição · ⚠️ improvisado · ⛔ indisponível</p>
+  <h3>Reservas</h3>
+  <div class="list">
+    ${[0, 1, 2, 3, 4, 5, 6].map(i => {
+      const p = g.players[uc.bench[i]];
+      if (!p) return `<div class="item tap" data-act="pickBench" data-i="${i}"><span class="pos">RES</span><div class="grow muted">— vazio —</div></div>`;
+      return playerRow(p, { act: 'pickBench', extra: `data-i="${i}"`, sub: `físico ${Math.round(p.fitness)}%` });
+    }).join('')}
+  </div>
+  ${tacticChips(uc)}
+  <h3>Treino da semana</h3>
+  <div class="card">
+    <label>Foco</label>
+    <div class="chips">${Object.keys(TRAIN_FOCUS).map(f => `<button class="chip ${tr.focus === f ? 'on' : ''}" data-act="setTrain" data-k="focus" data-v="${f}">${f}</button>`).join('')}</div>
+    <label>Intensidade</label>
+    <div class="chips">${Object.keys(TRAIN_INTENSITY).map(f => `<button class="chip ${tr.intensity === f ? 'on' : ''}" data-act="setTrain" data-k="intensity" data-v="${f}">${f}</button>`).join('')}</div>
+    <p class="tiny muted mt">Forte: jovens evoluem mais rápido, mas o time recupera menos o físico e há risco de lesão. Leve: recupera melhor.</p>
+  </div>`;
+}
+
+// Campo com a escalação (cada vaga é um botão)
+function tacticsPitch(S) {
+  const g = S.game, uc = userClub(g);
+  const slots = FORMATIONS[uc.formation];
+  const onField = slots.map((slot, i) => ({ id: uc.lineup[i] || 'vaga' + i, slot, i }));
+  const pos = layout(onField, true, true);
+  const short = n => { const w = String(n).trim().split(/\s+/); const s = w.length > 1 ? w[w.length - 1] : w[0]; return s.length > 11 ? s.slice(0, 10) + '.' : s; };
+  return `<div class="pitch pitch-tac">
+    <div class="pitch-lines"><i class="half"></i><i class="circle"></i><i class="box top"></i><i class="box bot"></i></div>
+    ${onField.map(f => {
+      const xy = pos[f.id];
+      const p = g.players[uc.lineup[f.i]];
+      if (!p) return `<div class="pl pl-me tac-empty" style="left:${xy.x}%;top:${xy.y}%" data-act="pickSlot" data-i="${f.i}">
+        <span class="shirt" style="--c1:#555;--c2:#333">${f.slot}</span><span class="nm">+ escolher</span></div>`;
+      const r = Math.round(effectiveRating(p, f.slot));
+      const off = p.pos !== f.slot;
+      const bad = !isAvailable(p, uc.id);
+      return `<div class="pl pl-me" style="left:${xy.x}%;top:${xy.y}%" data-act="pickSlot" data-i="${f.i}">
+        <span class="shirt" style="--c1:${esc(uc.colors[0])};--c2:${esc(uc.colors[1])}">${f.slot}</span>
+        <span class="nm">${bad ? '⛔' : off ? '⚠️' : ''}${esc(short(p.name))}</span>
+        <span class="en"><b class="${ovrClass(r)}" style="padding:0 3px;border-radius:3px">${r}</b> E:${Math.round(p.fitness)}</span>
+      </div>`;
+    }).join('')}
+  </div>`;
+}
+
+// Lista para escolher quem entra numa vaga
+export function pickPlayerModal(S, slot, title) {
+  const g = S.game, uc = userClub(g);
+  const ps = clubPlayers(g, uc.id).sort((a, b) => effectiveRating(b, slot) - effectiveRating(a, slot));
+  const where = id => uc.lineup.includes(id) ? '<span class="tag good">titular</span>' : uc.bench.includes(id) ? '<span class="tag">reserva</span>' : '';
+  return `<h2>${title}</h2><p class="small muted">Ordenado pelo rendimento na posição ${slot}.</p>
+  <div class="list">${ps.map(p => playerRow(p, { act: 'choosePlayer', ovr: Math.round(effectiveRating(p, slot)), sub: `${where(p.id)} físico ${Math.round(p.fitness)}%` })).join('')}</div>`;
+}
+
+// ---------------------------------------------------------------
+// TABELA, RODADAS E ARTILHARIA (de qualquer liga)
+// ---------------------------------------------------------------
+export function tableScreen(S) {
+  const g = S.game;
+  const tab = S.params.tab || 'class';
+  const lid = S.params.league || userLeague(g).id;
+  const L = g.leagues.find(l => l.id === lid);
+  const P = `data-league="${esc(lid)}"`;
+  const tabs = `<div class="tabs">
+    <button class="${tab === 'class' ? 'on' : ''}" data-act="go" data-to="table" data-tab="class" ${P}>Tabela</button>
+    <button class="${tab === 'rounds' ? 'on' : ''}" data-act="go" data-to="table" data-tab="rounds" ${P}>Rodadas</button>
+    <button class="${tab === 'scorers' ? 'on' : ''}" data-act="go" data-to="table" data-tab="scorers" ${P}>Artilh.</button>
+    <button class="${tab === 'cups' ? 'on' : ''}" data-act="go" data-to="table" data-tab="cups" ${P}>Copas</button>
+  </div>`;
+  if (tab === 'cups') return `<h1>Temporada ${g.season}</h1>${tabs}` + cupsView(S);
+  const head = `<h1>Temporada ${g.season}</h1>
+  <select class="mb" data-change="tableLeague">${leagueOptions(g.leagues, lid)}</select>${tabs}`;
+  if (tab === 'rounds') return head + roundsView(S, L);
+  if (tab === 'scorers') return head + scorersView(S, L);
+  const st = standings(g, lid);
+  const n = st.length;
+  const z = Math.max(2, Math.round(n / 5));
+  const mine = g.history.filter(h => h.champions && h.champions[lid]);
+  return head + `
+  <div class="card" style="padding:6px 8px">
+  <table>
+    <tr><th>#</th><th style="text-align:left">Clube</th><th>P</th><th>J</th><th>V</th><th>SG</th><th>Últ.</th></tr>
+    ${st.map((s, i) => {
+      const c = club(g, s.id);
+      const cls = [s.id === g.userClubId ? 'me' : '', i < z ? 'g4' : '', i >= n - z ? 'z4' : ''].join(' ');
+      return `<tr class="${cls}"><td>${i + 1}</td>
+        <td class="team"><span class="row" style="gap:6px">${badge(c, 'sm')}<span class="ellipsis" style="max-width:120px">${esc(c.name)}</span></span></td>
+        <td><b>${s.pts}</b></td><td>${s.j}</td><td>${s.v}</td><td>${s.gp - s.gc}</td>
+        <td><span class="form">${s.form.slice(-3).map(r => `<i class="${r}"></i>`).join('')}</span></td></tr>`;
+    }).join('')}
+  </table></div>
+  <p class="tiny muted"><span class="good">▌</span> ${z} primeiros &nbsp; <span class="bad">▌</span> ${z} últimos</p>
+  ${mine.length ? `<h3>Campeões anteriores</h3><div class="list">${mine.map(h => `<div class="item small">🏆 ${h.season}: <b>${esc(h.champions[lid])}</b>${h.leagueId === lid ? ` · você: ${h.userPos}º` : ''}</div>`).join('')}</div>` : ''}`;
+}
+
+// ---------- Copas: grupos, mata-mata, artilharia e campeões ----------
+function cupsView(S) {
+  const g = S.game;
+  const cups = g.cups || [];
+  if (!cups.length) return '<p class="muted">As copas começam na próxima temporada.</p>';
+  const mine = cups.filter(c => c.teams.includes(g.userClubId));
+  const cid = S.params.cup || (mine[0] || cups.find(c => c.type === 'continental') || cups[0]).id;
+  const cup = cups.find(c => c.id === cid) || cups[0];
+  const opt = c => `<option value="${esc(c.id)}" ${c.id === cup.id ? 'selected' : ''}>${esc(c.name)}${c.champion ? ' ✔' : ''}</option>`;
+  const sel = `<select class="mb" data-change="tableCup">
+    ${mine.length ? `<optgroup label="Suas copas">${mine.map(opt).join('')}</optgroup>` : ''}
+    <optgroup label="Mundiais e continentais">${cups.filter(c => c.type !== 'national').map(opt).join('')}</optgroup>
+    <optgroup label="Copas nacionais">${cups.filter(c => c.type === 'national').map(opt).join('')}</optgroup>
+  </select>`;
+  let html = sel;
+  if (cup.champion) {
+    const c = club(g, cup.champion);
+    html += `<div class="card hl center">${badge(c, 'lg')}<h2 style="margin-top:6px">🏆 ${esc(c.name)}</h2><p class="small muted">Campeão da ${esc(cup.name)} ${g.season}</p></div>`;
+  }
+  // Mata-mata (fases mais recentes primeiro)
+  for (const r of cup.rounds.slice().reverse()) {
+    html += `<h3>${esc(r.name)} <span class="muted small" style="text-transform:none">· semana ${r.week + 1}</span></h3>
+      <div class="list">${r.ties.map(f => resultRow(g, f)).join('')}</div>`;
+  }
+  if (cup.byes && cup.byes.length && cup.rounds.length) {
+    html += `<p class="small muted">Entram direto na próxima fase: ${cup.byes.map(id => esc(club(g, id).name)).join(', ')}.</p>`;
+  }
+  // Grupos
+  if (cup.groups.length) {
+    html += `<h3>Fase de grupos</h3>`;
+    for (const grp of cup.groups) {
+      const t = groupTable(grp);
+      html += `<div class="card" style="padding:6px 8px"><b>Grupo ${grp.name}</b><table>
+        <tr><th>#</th><th style="text-align:left">Clube</th><th>P</th><th>J</th><th>SG</th></tr>
+        ${t.map((s, i) => { const c = club(g, s.id); return `<tr class="${s.id === g.userClubId ? 'me' : ''} ${i < 2 ? 'g4' : ''}"><td>${i + 1}</td>
+          <td class="team"><span class="row" style="gap:6px">${badge(c, 'sm')}<span class="ellipsis" style="max-width:130px">${esc(c.name)}</span> <span class="tiny">${flag(c.country)}</span></span></td>
+          <td><b>${s.pts}</b></td><td>${s.j}</td><td>${s.gp - s.gc}</td></tr>`; }).join('')}
+      </table></div>`;
+    }
+    const myGroup = cup.groups.find(x => x.clubIds.includes(g.userClubId));
+    if (myGroup) html += `<h3>Jogos do seu grupo</h3><div class="list">${myGroup.fixtures.flat().map(f => resultRow(g, f)).join('')}</div>`;
+  }
+  if (!cup.rounds.length && !cup.groups.length) html += '<p class="muted">Ainda sem jogos.</p>';
+  const sc = cupScorers(g, cup).slice(0, 10);
+  if (sc.length) html += `<h3>Artilharia da copa</h3><div class="list">${sc.map(({ p, n }) => playerRow(p, {
+    sub: p.clubId ? esc(club(g, p.clubId).short) : '', right: `<b style="font-size:18px;width:34px" class="center">${n}</b>` })).join('')}</div>`;
+  const past = g.history.filter(h => h.cupChampions && h.cupChampions[cup.id]);
+  if (past.length) html += `<h3>Campeões anteriores</h3><div class="list">${past.map(h => `<div class="item small">🏆 ${h.season}: <b>${esc(h.cupChampions[cup.id].club)}</b></div>`).join('')}</div>`;
+  return html;
+}
+
+function roundsView(S, L) {
+  const g = S.game;
+  const total = L.fixtures.length;
+  const r = Math.max(0, Math.min(total - 1, S.params.round != null ? Number(S.params.round) : Math.max(0, Math.min(g.round, total) - 1)));
+  const games = L.fixtures[r] || [];
+  const P = `data-league="${esc(L.id)}"`;
+  return `
+  <div class="row between mb">
+    <button class="btn-sm" data-act="go" data-to="table" data-tab="rounds" ${P} data-round="${r - 1}" ${r <= 0 ? 'disabled' : ''}>‹ Anterior</button>
+    <b>Rodada ${r + 1} de ${total}</b>
+    <button class="btn-sm" data-act="go" data-to="table" data-tab="rounds" ${P} data-round="${r + 1}" ${r >= total - 1 ? 'disabled' : ''}>Próxima ›</button>
+  </div>
+  <div class="list">${games.map(f => resultRow(g, f)).join('')}</div>`;
+}
+
+export function resultRow(g, f) {
+  const h = club(g, f.h), a = club(g, f.a);
+  const me = f.h === g.userClubId || f.a === g.userClubId;
+  const sc = f.r ? `<b style="font-size:17px">${f.r.hg} x ${f.r.ag}</b>${f.r.pens ? `<div class="tiny muted">pên. ${f.r.pens[0]}x${f.r.pens[1]}</div>` : ''}` : '<span class="muted">x</span>';
+  const scorers = f.r && f.r.scorers ? `<div class="tiny muted" style="grid-column:1/4">${f.r.scorers[0].map(s => `${esc(s.name)} ${s.min}'`).join(', ')}${f.r.scorers[1].length ? ' | ' + f.r.scorers[1].map(s => `${esc(s.name)} ${s.min}'`).join(', ') : ''}</div>` : '';
+  return `<div class="item ${me ? 'me' : ''}" style="display:grid;grid-template-columns:1fr auto 1fr;gap:6px">
+    <span class="row ellipsis" style="justify-content:flex-end">${esc(h.short)} ${badge(h, 'sm')}</span>
+    <span class="center" style="min-width:60px">${sc}</span>
+    <span class="row ellipsis">${badge(a, 'sm')} ${esc(a.short)}</span>
+    ${scorers}
+  </div>`;
+}
+
+function scorersView(S, L) {
+  const g = S.game;
+  const ids = new Set(L.clubIds);
+  const top = Object.values(g.players).filter(p => p.seasonGoals > 0 && ids.has(p.clubId)).sort((a, b) => b.seasonGoals - a.seasonGoals).slice(0, 25);
+  if (!top.length) return '<p class="muted">Nenhum gol marcado ainda.</p>';
+  return `<div class="list">${top.map(p => playerRow(p, {
+    sub: p.clubId ? esc(club(g, p.clubId).short) : '', right: `<b style="font-size:18px;width:34px" class="center">${p.seasonGoals}</b>`
+  }).replace('class="item tap"', `class="item tap ${p.clubId === g.userClubId ? 'me' : ''}"`)).join('')}</div>`;
+}
+
+// ---------------------------------------------------------------
+// MERCADO
+// ---------------------------------------------------------------
+export function marketScreen(S) {
+  const g = S.game, uc = userClub(g);
+  const tab = S.params.tab || 'search';
+  const f = S.marketFilter;
+  const tabs = `<div class="tabs">
+    <button class="${tab === 'search' ? 'on' : ''}" data-act="go" data-to="market" data-tab="search">Buscar</button>
+    <button class="${tab === 'offers' ? 'on' : ''}" data-act="go" data-to="market" data-tab="offers">Propostas</button>
+    <button class="${tab === 'mine' ? 'on' : ''}" data-act="go" data-to="market" data-tab="mine">À venda</button>
+  </div>`;
+  const head = `<div class="row between"><h1>Mercado</h1><span class="tag ${windowOpen(g) ? 'good' : ''}">${windowOpen(g) ? 'Janela aberta' : 'Janela fechada'}</span></div>
+  <p class="small muted">Caixa: <b>${money(uc.budget)}</b> · Janelas: semanas 1–5 e 19–23.</p>${tabs}`;
+
+  if (tab === 'offers') {
+    const offers = g.inbox.filter(m => m.type === 'offer');
+    return head + (offers.length ? `<div class="list">${offers.map(o => offerRow(g, o)).join('')}</div>` : '<p class="muted">Nenhuma proposta. Coloque jogadores à venda para atrair interessados.</p>');
+  }
+  if (tab === 'mine') {
+    const ls = clubPlayers(g, uc.id).filter(p => p.listed);
+    return head + (ls.length ? `<div class="list">${ls.map(p => playerRow(p, { sub: money(p.value) })).join('')}</div>` : '<p class="muted">Nenhum jogador à venda. Abra um jogador no Elenco e toque em "Pôr à venda".</p>');
+  }
+  const leagueClubs = f.league && f.league !== 'ALL' ? new Set((g.leagues.find(l => l.id === f.league) || { clubIds: [] }).clubIds) : null;
+  let ps = Object.values(g.players).filter(p => p.clubId !== uc.id && !(p.loan && p.clubId));
+  if (leagueClubs && !f.free) ps = ps.filter(p => leagueClubs.has(p.clubId));
+  if (f.pos !== 'ALL') ps = ps.filter(p => p.pos === f.pos);
+  if (f.free) ps = ps.filter(p => !p.clubId);
+  if (f.maxPrice) ps = ps.filter(p => askingPrice(g, p) <= f.maxPrice);
+  if (f.young) ps = ps.filter(p => p.age <= 21);
+  if (f.q) { const q = f.q.toLowerCase(); ps = ps.filter(p => p.name.toLowerCase().includes(q)); }
+  ps.sort((a, b) => overall(b) - overall(a));
+  const total = ps.length;
+  ps = ps.slice(0, 60);
+  const priceOpts = [[0, 'Qualquer preço'], [1e6, 'até R$ 1 mi'], [5e6, 'até R$ 5 mi'], [15e6, 'até R$ 15 mi'], [40e6, 'até R$ 40 mi'], [100e6, 'até R$ 100 mi']];
+  return head + `
+  <div class="search">${icon('search', 18)}<input id="mk-q" placeholder="Buscar jogador pelo nome" value="${esc(f.q || '')}" data-change="marketSearch"></div>
+  <select class="mt" data-change="mkLeague">${leagueOptions(g.leagues, f.league || 'ALL', true)}</select>
+  <div class="chips scroll mt">${['ALL', ...POSITIONS].map(p => `<button class="chip ${f.pos === p ? 'on' : ''}" data-act="mkFilter" data-k="pos" data-v="${p}">${p === 'ALL' ? 'Todos' : p}</button>`).join('')}</div>
+  <div class="row mt mb">
+    <select data-change="mkPrice" style="flex:1">${priceOpts.map(([v, l]) => `<option value="${v}" ${f.maxPrice == v ? 'selected' : ''}>${l}</option>`).join('')}</select>
+    <button class="chip ${f.free ? 'on' : ''}" data-act="mkFilter" data-k="free" data-v="${!f.free}">Livres</button>
+    <button class="chip ${f.young ? 'on' : ''}" data-act="mkFilter" data-k="young" data-v="${!f.young}">Jovens</button>
+  </div>
+  <p class="tiny muted">${total.toLocaleString('pt-BR')} jogadores${total > 60 ? ' (mostrando os 60 melhores)' : ''}</p>
+  <div class="list">${ps.map(p => playerRow(p, {
+    sub: `${p.clubId ? esc(club(g, p.clubId).short) : '<span class="tag good">livre</span>'} · ${p.clubId ? money(askingPrice(g, p)) : 'sem taxa'}`
+  })).join('') || '<div class="item muted">Nenhum jogador encontrado.</div>'}</div>`;
+}
+
+// ---------------------------------------------------------------
+// FINANÇAS
+// ---------------------------------------------------------------
+export function financeScreen(S) {
+  const g = S.game, uc = userClub(g);
+  const wages = weeklyWages(g, uc.id);
+  const ledger = g.ledger.slice(0, 40);
+  return `
+  <div class="row between"><h1>Finanças</h1><button class="btn-sm" data-act="go" data-to="more">‹ Mais</button></div>
+  <div class="card hl center"><div class="tiny muted">CAIXA ATUAL</div><div style="font-size:28px;font-weight:800" class="${uc.budget < 0 ? 'bad' : ''}">${money(uc.budget)}</div></div>
+  <div class="grid2 mb">
+    <div class="card" style="margin:0"><div class="tiny muted">SALÁRIOS / SEMANA</div><b class="bad">-${money(wages)}</b></div>
+    <div class="card" style="margin:0"><div class="tiny muted">PATROCÍNIO / SEMANA</div><b class="good">+${money(uc.sponsor)}</b></div>
+    <div class="card" style="margin:0"><div class="tiny muted">ESTÁDIO</div>${uc.stadiumName ? esc(uc.stadiumName) + '<br>' : ''}${uc.stadium.toLocaleString('pt-BR')} lugares</div>
+    <div class="card" style="margin:0"><div class="tiny muted">TORCIDA</div>${uc.fans.toLocaleString('pt-BR')}</div>
+  </div>
+  <div class="card">
+    <h3>Preço do ingresso</h3>
+    <div class="row between">
+      <button data-act="ticket" data-d="-5">−5</button>
+      <b style="font-size:22px">R$ ${uc.ticketPrice}</b>
+      <button data-act="ticket" data-d="5">+5</button>
+    </div>
+    <p class="tiny muted mt">Ingresso caro dá mais dinheiro por torcedor, mas o estádio enche menos. Time bem colocado atrai mais público.</p>
+  </div>
+  <h3>Extrato</h3>
+  <div class="list">${ledger.length ? ledger.map(l => `<div class="item small"><span class="grow">${esc(l.label)}<div class="tiny muted">Semana ${l.round + 1}/${l.season}</div></span><b class="${l.value < 0 ? 'bad' : 'good'}">${l.value < 0 ? '' : '+'}${money(l.value)}</b></div>`).join('') : '<div class="item muted small">Sem movimentações ainda.</div>'}</div>`;
+}
+
+// ---------------------------------------------------------------
+// MAIS (salvar, carregar, banco de dados)
+// ---------------------------------------------------------------
+export function moreScreen(S) {
+  const g = S.game;
+  return `
+  <h1>Mais</h1>
+  ${(() => {
+    const it = (act, ic, t, sub, extra = '', color = '') => `<div class="item tap menu-item" data-act="${act}" ${extra}><span class="ic-box" ${color}>${icon(ic)}</span><div class="grow"><b>${t}</b>${sub ? `<div class="small muted">${sub}</div>` : ''}</div>${icon('chevron', 18, 'chev')}</div>`;
+    return `<div class="list stagger">
+      ${it('go', 'whistle', 'Carreira do técnico', 'Metas, diretoria, propostas e troféus', 'data-to="career"')}
+      ${it('go', 'medal', 'Prêmios', 'Melhor da liga e Melhor do Mundo', 'data-to="awards"', 'style="color:var(--gold);background:rgba(255,210,90,.12)"')}
+      ${it('go', 'coin', 'Finanças', 'Caixa, ingressos e extrato', 'data-to="finance"')}
+    </div>
+    <h3>Jogo salvo</h3>
+    <div class="list stagger">
+      ${it('saveMenu', 'save', 'Salvar jogo', '3 espaços + salvamento automático')}
+      ${it('loadMenu', 'folder', 'Carregar jogo', '')}
+      ${it('exportSave', 'upload', 'Exportar jogo', 'Backup em arquivo')}
+    </div>
+    <h3>Banco de dados</h3>
+    <div class="list stagger">
+      ${it('exportDBjson', 'download', 'Exportar banco (JSON)', 'Para editar e importar num jogo novo')}
+      ${it('exportDBcsvGame', 'chart', 'Exportar jogadores (CSV)', 'Abre no Excel')}
+    </div>
+    <div class="list">${it('quit', 'logout', 'Voltar ao menu inicial', 'O jogo fica salvo', '', 'style="color:var(--bad);background:rgba(255,77,109,.12)"')}</div>`;
+  })()}
+  <div class="card small muted">
+    <b>Sobre os dados:</b> ${esc(g.dbName || '')}.<br>${esc(g.dbSource || '')}
+    <br>Nomes de clubes e atletas podem ter restrições de uso de imagem e marca: este jogo é para uso pessoal. Escudos não são usados (os círculos têm só as cores).
+  </div>`;
+}
+
+export function slotsModal(mode) {
+  return `<h2>${mode === 'save' ? 'Salvar jogo' : 'Carregar jogo'}</h2>
+  <div class="list">${SLOTS.map(s => {
+    const info = slotInfo(s);
+    if (mode === 'save' && s === 'auto') return '';
+    return `<div class="item ${info || mode === 'save' ? 'tap' : ''}" ${info || mode === 'save' ? `data-act="${mode}Slot" data-slot="${s}"` : ''}>
+      <span>${s === 'auto' ? '🔄' : '💾'}</span>
+      <div class="grow"><b>${s === 'auto' ? 'Automático' : 'Espaço ' + s}</b>
+      <div class="small muted">${info ? esc(info.label) + ' · ' + new Date(info.savedAt).toLocaleString('pt-BR') : 'vazio'}</div></div>
+    </div>`;
+  }).join('')}</div>
+  ${mode === 'save' ? '<p class="tiny muted">O jogo também é salvo automaticamente depois de cada rodada.</p>' : ''}`;
+}

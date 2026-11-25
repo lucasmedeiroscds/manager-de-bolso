@@ -1,0 +1,288 @@
+// =============================================================
+// match-screen.js — partida ao vivo (campo, lances, números)
+// =============================================================
+// A tela é desenhada uma vez (matchScreen) e depois só os pedaços
+// que mudam são atualizados a cada minuto (patchMatch). Assim a bola
+// pode deslizar pelo campo com animação.
+// =============================================================
+import { esc, money, rnd } from '../util.js';
+import { effectiveRating } from '../engine/ratings.js';
+import { badge } from './ui.js';
+import { resultRow, tacticChips } from './screens.js';
+import { ceremonyBlock } from './awards-screen.js';
+import { reviewBlock } from './career-screen.js';
+import { icon } from './icons.js';
+
+const userTeam = (S, m) => m.teams.find(t => t.club.id === S.game.userClubId);
+const oppTeam = (S, m) => m.teams.find(t => t.club.id !== S.game.userClubId);
+const surname = n => { const w = String(n).trim().split(/\s+/); const s = w.length > 1 ? w[w.length - 1] : w[0]; return s.length > 10 ? s.slice(0, 9) + '.' : s; };
+
+// ---------- Posições no campo ----------
+// Linhas: goleiro, defesa, volantes, meias, ataque. Laterais e meias
+// vão para as pontas da linha; volantes e zagueiros, para o centro.
+const ROW = { GOL: 0, ZAG: 1, LAT: 1, VOL: 2, MEI: 3, ATA: 4 };
+const WIDE = { LAT: 3, MEI: 2, ATA: 1, VOL: 1, ZAG: 0, GOL: 0 };
+// full = true: um time só ocupando o campo inteiro (tela de Tática)
+export function layout(onField, bottom, full = false) {
+  const rows = [[], [], [], [], []];
+  onField.forEach(f => rows[ROW[f.slot]].push(f));
+  const used = rows.filter(r => r.length);
+  const out = {};
+  const outfield = used.filter(r => r[0].slot !== 'GOL');
+  used.forEach(row => {
+    // ordena: mais "abertos" nas pontas
+    const sorted = row.slice().sort((a, b) => WIDE[b.slot] - WIDE[a.slot]);
+    const pos = new Array(row.length);
+    let l = 0, r = row.length - 1;
+    sorted.forEach((f, i) => { if (i % 2 === 0) pos[l++] = f; else pos[r--] = f; });
+    const isGK = row[0].slot === 'GOL';
+    const k = outfield.indexOf(row);
+    const yb = full
+      ? (isGK ? 91 : 73 - (outfield.length > 1 ? k * (56 / (outfield.length - 1)) : 28))
+      : (isGK ? 94 : 82 - (outfield.length > 1 ? k * (28 / (outfield.length - 1)) : 14));
+    pos.forEach((f, i) => {
+      // linhas com poucos jogadores ficam mais centralizadas
+      const m = row.length === 2 ? 28 : row.length === 3 ? 18 : 12;
+      const x = row.length === 1 ? 50 : m + (100 - 2 * m) * i / (row.length - 1);
+      out[f.id] = { x: bottom ? x : 100 - x, y: bottom ? yb : 100 - yb };
+    });
+  });
+  return out;
+}
+
+function playerDot(S, m, t, f, xy, bottom) {
+  const p = S.game.players[f.id];
+  const sel = S.subOut === f.id;
+  const y = t.yellows[f.id] ? '🟨' : '';
+  const inj = f.injured ? '🚑' : '';
+  const mine = t.club.id === S.game.userClubId;
+  return `<div class="pl ${bottom ? 'pl-me' : ''} ${sel ? 'sel' : ''}" style="left:${xy.x}%;top:${xy.y}%" data-pid="${f.id}" ${mine ? `data-act="pitchPick" data-id="${f.id}"` : ''}>
+    <span class="shirt" style="--c1:${esc(t.club.colors[0])};--c2:${esc(t.club.colors[1])}">${f.slot}</span>
+    <span class="nm">${inj}${y}${esc(surname(p.name))}</span>
+    <span class="en ${p.fitness < 50 ? 'low' : p.fitness < 70 ? 'mid' : ''}">E:${Math.round(p.fitness)}</span>
+  </div>`;
+}
+
+function pitchHTML(S, m) {
+  const me = userTeam(S, m), op = oppTeam(S, m);
+  const L1 = layout(me.onField, true), L2 = layout(op.onField, false);
+  return `<div class="pitch" id="mx-pitch">
+    <div class="pitch-lines"><i class="half"></i><i class="circle"></i><i class="box top"></i><i class="box bot"></i></div>
+    ${op.onField.map(f => playerDot(S, m, op, f, L2[f.id], false)).join('')}
+    ${me.onField.map(f => playerDot(S, m, me, f, L1[f.id], true)).join('')}
+    <div class="ball" id="mx-ball" style="left:50%;top:50%"></div>
+    <div class="goal-flash" id="mx-flash"></div>
+  </div>`;
+}
+
+function benchHTML(S, m) {
+  const t = userTeam(S, m);
+  const list = t.bench.filter(id => !t.used.has(id));
+  const out = S.subOut ? t.onField.find(f => f.id === S.subOut) : null;
+  return `<div class="row between"><h3 style="margin:0">Reservas · ${t.subsLeft} troca(s)</h3>
+    <span class="tiny muted">${out ? 'Agora toque em quem entra' : 'Toque num jogador seu no campo para trocar'}</span></div>
+  <div class="bench">${list.map(id => {
+    const p = S.game.players[id];
+    const r = Math.round(effectiveRating(p, out ? out.slot : p.pos));
+    return `<button class="bn ${out ? 'ready' : ''}" data-act="${out ? 'subIn' : 'benchInfo'}" data-id="${id}">
+      <b>${p.pos}</b> ${esc(surname(p.name))}<span class="tiny">E:${Math.round(p.fitness)} · ${r}</span></button>`;
+  }).join('') || '<span class="muted small">Sem reservas disponíveis.</span>'}</div>`;
+}
+
+function statsHTML(m) {
+  const [h, a] = m.teams;
+  const total = h.stats.poss + a.stats.poss || 1;
+  const row = (l, x, y) => {
+    const s = (x + y) || 1;
+    return `<div class="sbar"><b>${x}</b><div><div class="lbl">${l}</div><div class="track"><i style="width:${x / s * 100}%"></i></div></div><b>${y}</b></div>`;
+  };
+  const ph = Math.round(h.stats.poss / total * 100);
+  return `<div class="card">
+    ${row('Posse de bola (%)', ph, 100 - ph)}
+    ${row('Finalizações', h.stats.shots, a.stats.shots)}
+    ${row('No gol', h.stats.onTarget, a.stats.onTarget)}
+    ${row('Escanteios', h.stats.corners, a.stats.corners)}
+    ${row('Desarmes', h.stats.tackles, a.stats.tackles)}
+    ${row('Erros de passe', h.stats.passErr, a.stats.passErr)}
+    ${row('Faltas', h.stats.fouls, a.stats.fouls)}
+    ${row('Amarelos', h.stats.yellow, a.stats.yellow)}
+    ${row('Vermelhos', h.stats.red, a.stats.red)}
+  </div>`;
+}
+
+function feedHTML(S, m) {
+  const evs = m.events.filter(e => e.type !== 'chance' && e.type !== 'tackle' || S.matchVerbose).slice().reverse();
+  return `<label class="small row" style="margin:0 0 8px"><input type="checkbox" style="width:auto;min-height:0" data-change="verbose" ${S.matchVerbose ? 'checked' : ''}> mostrar todos os lances</label>
+  ${evs.map(e => `<div class="ev ${e.type}"><span class="m">${e.min}'</span>${esc(e.text)}</div>`).join('')}`;
+}
+
+// Notas dos jogadores (depois do apito final)
+function ratingsHTML(S, m) {
+  if (!m.ratings) return '';
+  const col = t => [...t.used].map(id => ({ p: S.game.players[id], r: m.ratings[id] })).filter(x => x.p).sort((a, b) => b.r - a.r)
+    .map(({ p, r }) => `<div class="row small" style="justify-content:space-between;padding:3px 0;border-bottom:1px solid var(--line)">
+      <span class="ellipsis">${p.pos} ${esc(surname(p.name))}</span><b class="${r >= 7.5 ? 'good' : r < 5.5 ? 'bad' : ''}">${r.toFixed(1)}</b></div>`).join('');
+  const [h, a] = m.teams;
+  const best = [...h.used, ...a.used].sort((x, y) => (m.ratings[y] || 0) - (m.ratings[x] || 0))[0];
+  return `<h3 class="mt">Notas da partida</h3>
+  ${best ? `<p class="small">⭐ Craque do jogo: <b>${esc(S.game.players[best].name)}</b> (${m.ratings[best].toFixed(1)})</p>` : ''}
+  <div class="grid2"><div class="card" style="margin:0"><b class="small">${esc(h.club.short)}</b>${col(h)}</div>
+  <div class="card" style="margin:0"><b class="small">${esc(a.club.short)}</b>${col(a)}</div></div>`;
+}
+
+function othersHTML(S, m) {
+  const same = S.prep.matches.filter(x => x !== m && x.leagueId === m.leagueId);
+  return `<h3 class="mt">Outros jogos da liga</h3><div class="list">${same.map(x => `<div class="item small" style="display:grid;grid-template-columns:1fr auto 1fr;gap:6px;min-height:0;padding:6px 12px">
+    <span class="right ellipsis">${esc(x.teams[0].club.name)}</span><b>${x.teams[0].goals} x ${x.teams[1].goals}</b><span class="ellipsis">${esc(x.teams[1].club.name)}</span></div>`).join('')}</div>`;
+}
+
+function scorersLine(t) {
+  return t.scorers.map(s => `⚽ ${s.min}'`).join(' ');
+}
+
+function lastBigEvent(m) {
+  const e = [...m.events].reverse().find(x => ['goal', 'red', 'yellow', 'injury', 'sub', 'save', 'half', 'end', 'info', 'pen'].includes(x.type));
+  return e ? `<span class="m">${e.min}'</span> ${esc(e.text)}` : '';
+}
+
+// ---------- Tela completa ----------
+export function matchScreen(S) {
+  const m = S.prep.userMatch;
+  const [h, a] = m.teams;
+  const tab = S.matchTab || 'campo';
+  const ended = m.finished;
+  const home = h.club;
+  const body = tab === 'campo' ? pitchHTML(S, m) + benchHTML(S, m)
+    : tab === 'lances' ? feedHTML(S, m)
+    : statsHTML(m) + ratingsHTML(S, m) + othersHTML(S, m);
+  const col = c => esc(c.colors[0] === '#ffffff' || c.colors[0] === '#fff' ? c.colors[1] : c.colors[0]);
+  return `
+  <div class="score ${ended ? 'ended' : ''}" id="mx-scoreboard" style="--h1:${col(h.club)};--a1:${col(a.club)}">
+    <div class="t">${badge(h.club, 'lg')}<span class="ellipsis" style="max-width:110px">${esc(h.club.name)}</span><span class="tiny" id="mx-sc0">${scorersLine(h)}</span></div>
+    <div style="display:flex;flex-direction:column;align-items:center"><div class="g" id="mx-g">${h.goals} - ${a.goals}</div>${m.pens ? `<div class="tiny center accent">pênaltis ${m.pens[0]} x ${m.pens[1]}</div>` : ''}<div class="min" id="mx-min">${ended ? 'Encerrado' : m.minute + "'"}</div>
+      <div class="prog"><i id="mx-prog" style="width:${m.minute / 90 * 100}%"></i></div></div>
+    <div class="t">${badge(a.club, 'lg')}<span class="ellipsis" style="max-width:110px">${esc(a.club.name)}</span><span class="tiny" id="mx-sc1">${scorersLine(a)}</span></div>
+  </div>
+  <div class="mx-info small"><b class="row" style="gap:5px">${m.cupName ? icon('trophy', 15) + ' ' + esc(m.cupName) + ' · ' + esc(m.stage) : icon('calendar', 15) + ' ' + esc((S.game.leagues.find(l => l.id === m.leagueId) || {}).name || '') + ' · Rodada ' + (S.game.round + 1)}</b>${m.knockout ? ' <span class="tag warn">mata-mata</span>' : ''}</div>
+  <div class="mx-info tiny muted"><span>${icon('stadium', 14)} ${esc(home.stadiumName || 'Estádio do ' + home.name)}</span><span>${icon('users', 14)} ${(m.attendance || 0).toLocaleString('pt-BR')}</span><span>${icon('coin', 14)} ${money(m.income || 0)}</span></div>
+  <div class="momentum" style="--h1:${col(h.club)};--a1:${col(a.club)}">${momentumHTML(m)}</div>
+  <div class="ticker" id="mx-ticker">${lastBigEvent(m)}</div>
+  <div class="tabs">
+    ${[['campo', 'pitch', 'Campo'], ['lances', 'list', 'Lances'], ['numeros', 'chart', 'Números']].map(([k, ic, l]) =>
+      `<button class="${tab === k ? 'on' : ''}" data-act="matchTab" data-v="${k}">${icon(ic, 17)} ${l}</button>`).join('')}
+  </div>
+  <div id="mx-body" style="--h1:${col(h.club)};--a1:${col(a.club)}">${body}</div>
+  <div style="height:86px"></div>
+  <div class="match-ctrl"><div class="inner">
+    ${ended
+      ? `<button class="btn-main" data-act="endMatch">Continuar ${icon('chevron', 20)}</button>`
+      : `<button id="mx-pause" data-act="matchPause" class="${S.matchRunning ? '' : 'primary'}">${pauseLabel(S.matchRunning)}</button>
+         <button data-act="matchSpeed">${icon('fast', 20)}${['1x', '2x', '4x'][S.matchSpeed]}</button>
+         <button data-act="matchTactics">${icon('target', 20)}Tática</button>
+         <button data-act="matchSkip">${icon('skip', 20)}Fim</button>`}
+  </div></div>`;
+}
+
+export function pauseLabel(running) {
+  return running ? `${icon('pause', 20)}Pausar` : `${icon('play', 20)}Seguir`;
+}
+
+// Domínio (posse de bola acumulada) — barra ao vivo
+function momentumHTML(m) {
+  const [h, a] = m.teams;
+  const tot = h.stats.poss + a.stats.poss;
+  const p = tot ? Math.round(h.stats.poss / tot * 100) : 50;
+  return `<span id="mx-mh">${p}%</span><div class="trk"><i id="mx-mom" style="width:${p}%"></i></div><span id="mx-ma" class="right">${100 - p}%</span><div class="lbl">Posse de bola</div>`;
+}
+
+// Aviso rápido sobre o campo (cartão, troca, lesão)
+function pitchPop(text) {
+  const pitch = document.getElementById('mx-pitch');
+  if (!pitch) return;
+  pitch.querySelectorAll('.pitch-pop').forEach(e => e.remove());
+  const d = document.createElement('div');
+  d.className = 'pitch-pop';
+  d.textContent = text;
+  pitch.appendChild(d);
+  setTimeout(() => d.remove(), 2300);
+}
+
+// Assinatura de quem está em campo: se mudar, a tela é redesenhada
+export function fieldSignature(m) {
+  return m.teams.map(t => t.onField.map(f => f.id + f.slot + (f.injured ? 'i' : '')).join(',') + '|' + t.subsLeft).join('#');
+}
+
+// ---------- Atualização leve (a cada minuto) ----------
+export function patchMatch(S, newEvents) {
+  const m = S.prep.userMatch;
+  const [h, a] = m.teams;
+  const $ = id => document.getElementById(id);
+  if (!$('mx-g')) return false;
+  $('mx-g').textContent = `${h.goals} - ${a.goals}`;
+  $('mx-min').textContent = m.finished ? 'Encerrado' : m.minute + "'";
+  $('mx-prog').style.width = (m.minute / 90 * 100) + '%';
+  $('mx-sc0').textContent = scorersLine(h);
+  $('mx-sc1').textContent = scorersLine(a);
+  const tk = $('mx-ticker');
+  const tkHtml = lastBigEvent(m);
+  if (tk.innerHTML !== tkHtml) { tk.innerHTML = tkHtml; tk.classList.remove('pop'); void tk.offsetWidth; tk.classList.add('pop'); }
+  // barra de posse
+  const tot = h.stats.poss + a.stats.poss;
+  const ph = tot ? Math.round(h.stats.poss / tot * 100) : 50;
+  if ($('mx-mom')) { $('mx-mom').style.width = ph + '%'; $('mx-mh').textContent = ph + '%'; $('mx-ma').textContent = (100 - ph) + '%'; }
+  const goal = newEvents.find(e => e.type === 'goal');
+  if (goal) {
+    const sb = $('mx-scoreboard');
+    sb.classList.remove('flash'); void sb.offsetWidth; sb.classList.add('flash');
+  }
+  // cartões, trocas e lesões aparecem rapidinho sobre o campo
+  const pop = newEvents.find(e => ['yellow', 'red', 'sub', 'injury'].includes(e.type));
+  if (pop) pitchPop(pop.text);
+  const tab = S.matchTab || 'campo';
+  if (tab === 'campo') {
+    // Energia de cada jogador
+    for (const t of m.teams) for (const f of t.onField) {
+      const el = document.querySelector(`.pl[data-pid="${f.id}"] .en`);
+      if (!el) continue;
+      const fit = S.game.players[f.id].fitness;
+      el.textContent = 'E:' + Math.round(fit);
+      el.className = 'en ' + (fit < 50 ? 'low' : fit < 70 ? 'mid' : '');
+    }
+    // Movimento de bola e jogadores (ver pitch-anim.js)
+    if (S.anim) S.anim.onMinute(newEvents, S.animMs || S.minuteMs);
+  } else {
+    $('mx-body').innerHTML = tab === 'lances' ? feedHTML(S, m) : statsHTML(m) + ratingsHTML(S, m) + othersHTML(S, m);
+  }
+  return true;
+}
+
+// Modal de tática durante o jogo
+export function matchTacticsModal(S) {
+  const uc = S.game.clubs.find(c => c.id === S.game.userClubId);
+  return `<h2>Tática na partida</h2>${tacticChips(uc, 'match')}
+  <p class="tiny muted">As mudanças valem a partir do próximo minuto.</p>`;
+}
+
+// Resumo depois da rodada
+export function roundSummaryScreen(S) {
+  const g = S.game;
+  const r = S.lastRound;
+  return `
+  <h1>${r.fixtures.length ? 'Resultados' : 'Semana ' + (r.roundIndex + 1)}</h1>
+  ${r.title ? `<p class="muted small">${esc(r.title)}</p>` : ''}
+  <div class="list">${r.fixtures.map(f => resultRow(g, f)).join('') || '<div class="item muted small">Sua liga não jogou nesta semana.</div>'}</div>
+  ${r.seasonEnd ? `<div class="card hl center">
+    <div style="font-size:40px">🏆</div>
+    <h2>${esc(r.seasonEnd.champion)} é campeão de ${r.seasonEnd.season}!</h2>
+    <p>Você terminou em <b>${r.seasonEnd.userPos}º lugar</b>.</p>
+    <p class="small muted">Artilheiro: ${esc(r.seasonEnd.topScorer)}</p>
+    ${r.seasonEnd.userCups && r.seasonEnd.userCups.length ? `<p><b>Seus títulos de copa: ${r.seasonEnd.userCups.map(esc).join(', ')} 🏆</b></p>` : ''}
+  </div>
+  ${reviewBlock(r.seasonEnd.career)}
+  ${ceremonyBlock(g, r.seasonEnd.awards)}
+  <div>
+    <p class="small muted">Contratos, aposentadorias e revelações da base estão nas mensagens.</p>
+  </div>` : ''}
+  <button class="btn-main mt" data-act="go" data-to="hub">Continuar ›</button>
+  <button class="btn-block mt" data-act="go" data-to="table">Ver tabela</button>`;
+}

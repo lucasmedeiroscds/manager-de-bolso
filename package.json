@@ -1,0 +1,10 @@
+{
+  "name": "brasfoot-pessoal",
+  "private": true,
+  "type": "module",
+  "description": "Jogo de gerenciamento de futebol (uso pessoal). Não precisa instalar nada: só Node para o servidor local e os testes.",
+  "scripts": {
+    "start": "node servidor.js",
+    "test": "node testes/simular-temporadas.js"
+  }
+}
