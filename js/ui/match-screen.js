@@ -66,13 +66,13 @@ function playerDot(S, m, t, f, xy, bottom) {
 function pitchHTML(S, m) {
   const me = userTeam(S, m), op = oppTeam(S, m);
   const L1 = layout(me.onField, true), L2 = layout(op.onField, false);
-  return `<div class="pitch" id="mx-pitch">
+  // .pitch-inner é a camada que recebe o zoom no replay do gol
+  return `<div class="pitch" id="mx-pitch"><div class="pitch-inner" id="mx-pitch-inner">
     <div class="pitch-lines"><i class="half"></i><i class="circle"></i><i class="box top"></i><i class="box bot"></i></div>
     ${op.onField.map(f => playerDot(S, m, op, f, L2[f.id], false)).join('')}
     ${me.onField.map(f => playerDot(S, m, me, f, L1[f.id], true)).join('')}
     <div class="ball" id="mx-ball" style="left:50%;top:50%"></div>
-    <div class="goal-flash" id="mx-flash"></div>
-  </div>`;
+  </div><div class="goal-flash" id="mx-flash"></div></div>`;
 }
 
 function benchHTML(S, m) {
@@ -150,7 +150,7 @@ function scorersLine(t) {
 }
 
 function lastBigEvent(m) {
-  const e = [...m.events].reverse().find(x => ['goal', 'red', 'yellow', 'injury', 'sub', 'save', 'half', 'end', 'info', 'pen'].includes(x.type));
+  const e = [...m.events].reverse().find(x => ['goal', 'red', 'yellow', 'injury', 'sub', 'save', 'half', 'end', 'info', 'pen', 'color', 'talk'].includes(x.type));
   return e ? `<span class="m">${e.min}'</span> ${esc(e.text)}` : '';
 }
 
@@ -163,7 +163,7 @@ export function matchScreen(S) {
   const home = h.club;
   const body = tab === 'campo' ? pitchHTML(S, m) + benchHTML(S, m)
     : tab === 'lances' ? feedHTML(S, m)
-    : statsHTML(m) + ratingsHTML(S, m) + othersHTML(S, m);
+    : bigPressure(m) + statsHTML(m) + shotsBlock(m) + ratingsHTML(S, m) + othersHTML(S, m);
   const col = c => esc(c.colors[0] === '#ffffff' || c.colors[0] === '#fff' ? c.colors[1] : c.colors[0]);
   return `
   <div class="score ${ended ? 'ended' : ''}" id="mx-scoreboard" style="--h1:${col(h.club)};--a1:${col(a.club)}">
@@ -175,6 +175,7 @@ export function matchScreen(S) {
   <div class="mx-info small"><b class="row" style="gap:5px">${m.cupName ? icon('trophy', 15) + ' ' + esc(m.cupName) + ' · ' + esc(m.stage) : icon('calendar', 15) + ' ' + esc((S.game.leagues.find(l => l.id === m.leagueId) || {}).name || '') + ' · Rodada ' + (S.game.round + 1)}</b>${m.knockout ? ' <span class="tag warn">mata-mata</span>' : ''}</div>
   <div class="mx-info tiny muted"><span>${icon('stadium', 14)} ${esc(home.stadiumName || 'Estádio do ' + home.name)}</span><span>${icon('users', 14)} ${(m.attendance || 0).toLocaleString('pt-BR')}</span><span>${icon('coin', 14)} ${money(m.income || 0)}</span></div>
   <div class="momentum" style="--h1:${col(h.club)};--a1:${col(a.club)}">${momentumHTML(m)}</div>
+  <div class="press-wrap" id="mx-press" style="--h1:${col(h.club)};--a1:${col(a.club)}">${pressureSVG(m)}</div>
   <div class="ticker" id="mx-ticker">${lastBigEvent(m)}</div>
   <div class="tabs">
     ${[['campo', 'pitch', 'Campo'], ['lances', 'list', 'Lances'], ['numeros', 'chart', 'Números']].map(([k, ic, l]) =>
@@ -202,6 +203,95 @@ function momentumHTML(m) {
   const tot = h.stats.poss + a.stats.poss;
   const p = tot ? Math.round(h.stats.poss / tot * 100) : 50;
   return `<span id="mx-mh">${p}%</span><div class="trk"><i id="mx-mom" style="width:${p}%"></i></div><span id="mx-ma" class="right">${100 - p}%</span><div class="lbl">Posse de bola</div>`;
+}
+
+// ---------- Preleção e conversa no intervalo ----------
+export function talkModal(S, when) {
+  const m = S.prep.userMatch;
+  const meIdx = m.teams.findIndex(t => t.club.id === S.game.userClubId);
+  const me = m.teams[meIdx], op = m.teams[1 - meIdx];
+  const ctx = when === 'half'
+    ? `Intervalo: ${me.club.short} ${me.goals} x ${op.goals} ${op.club.short}. ${me.goals > op.goals ? 'Vocês estão vencendo.' : me.goals < op.goals ? 'Vocês estão perdendo.' : 'O jogo está empatado.'}`
+    : `Antes de enfrentar o ${op.club.name}. Força: ${Math.round(teamPower(m, meIdx))} x ${Math.round(teamPower(m, 1 - meIdx))}.`;
+  const opt = (v, ic, t, d) => `<button class="talk-opt" data-act="teamTalk" data-v="${v}" data-when="${when}">
+    <span class="ic-box">${icon(ic, 20)}</span><span class="grow" style="text-align:left"><b>${t}</b><span class="small muted" style="display:block">${d}</span></span></button>`;
+  return `<div class="center" style="margin-top:4px">
+      <div class="avatar" style="margin:0 auto 10px">${icon('whistle', 30)}</div>
+      <h2>${when === 'half' ? 'Conversa no intervalo' : 'Preleção'}</h2>
+      <p class="small muted">${esc(ctx)}</p></div>
+    <div class="talk-list">
+      ${opt('elogiar', 'star', 'Elogiar o time', 'Bom quando as coisas vão bem.')}
+      ${opt('cobrar', 'fire', 'Cobrar mais empenho', 'Desperta quem está abaixo. Pode irritar quem joga bem.')}
+      ${opt('calma', 'shield', 'Pedir calma e concentração', 'Menos cartões e defesa mais atenta.')}
+      ${opt('pracima', 'bolt', 'Mandar o time pra cima', 'Mais ataque, defesa mais exposta e mais cansaço.')}
+    </div>
+    <button class="btn-block btn-sm btn-ghost mt" data-act="skipTalk" data-when="${when}">Pular</button>`;
+}
+function teamPower(m, i) {
+  const s = m.strength(m.teams[i]);
+  return (s.att + s.mid + s.def) / 6;
+}
+
+// ---------- Gráfico de pressão (quem está atacando mais, minuto a minuto) ----------
+// Acima da linha: mandante; abaixo: visitante. Linhas verticais = gols.
+export function pressureSVG(m, height = 46) {
+  const raw = m.pressure || [];
+  const pts = raw.map((_, i) => {
+    const w = raw.slice(Math.max(0, i - 4), i + 1);          // média dos últimos 5 minutos
+    return w.reduce((s, v) => s + v, 0) / w.length;
+  });
+  const maxAbs = Math.max(1.5, ...pts.map(Math.abs));
+  const Y = v => 20 - (v / maxAbs) * 18;
+  const up = pts.map((v, i) => `${i + 0.5},${Y(Math.max(0, v)).toFixed(2)}`).join(' ');
+  const dn = pts.map((v, i) => `${i + 0.5},${Y(Math.min(0, v)).toFixed(2)}`).join(' ');
+  const n = pts.length;
+  const goals = m.events.filter(e => e.type === 'goal').map(e =>
+    `<line x1="${e.min - 0.5}" x2="${e.min - 0.5}" y1="${e.side === 0 ? 1 : 21}" y2="${e.side === 0 ? 19 : 39}" class="pg ${e.side === 0 ? 'h' : 'a'}" vector-effect="non-scaling-stroke"/>`).join('');
+  return `<svg class="press" viewBox="0 0 90 40" preserveAspectRatio="none" style="height:${height}px">
+    <line x1="45" x2="45" y1="0" y2="40" class="ph" vector-effect="non-scaling-stroke"/>
+    ${n ? `<polygon points="0.5,20 ${up} ${n - 0.5},20" class="pu"/><polygon points="0.5,20 ${dn} ${n - 0.5},20" class="pd"/>` : ''}
+    <line x1="0" x2="90" y1="20" y2="20" class="pz" vector-effect="non-scaling-stroke"/>${goals}
+  </svg>`;
+}
+
+function bigPressure(m) {
+  const [h, a] = m.teams;
+  return `<h3 style="margin-top:4px">Pressão ao longo do jogo</h3>
+  <div class="card" style="padding:10px 12px">
+    <div class="row between tiny"><b>${esc(h.club.short)} ▲</b><span class="muted">1º tempo · 2º tempo</span><b>▼ ${esc(a.club.short)}</b></div>
+    <div class="press-wrap big">${pressureSVG(m, 96)}</div>
+    <div class="tiny muted center">Quanto mais alta a onda, mais aquele time atacava. Linhas = gols.</div>
+  </div>`;
+}
+
+// ---------- Mapa de chutes ----------
+function shotMapSVG(m, side) {
+  const shots = (m.shots || []).filter(s => s.side === side);
+  const dots = shots.map(s => {
+    const cx = (s.x / 100 * 68).toFixed(1), cy = (s.d * 52 + 1).toFixed(1);
+    return s.res === 'goal' ? `<circle cx="${cx}" cy="${cy}" r="1.9" class="sg"/>`
+      : s.res === 'save' ? `<circle cx="${cx}" cy="${cy}" r="1.4" class="ss"/>`
+      : `<circle cx="${cx}" cy="${cy}" r="1.2" class="sm"/>`;
+  }).join('');
+  // só o terço final (onde saem os chutes), para os pontos não ficarem espremidos
+  return `<svg class="shotmap" viewBox="0 -2 68 34">
+    <rect x="0.5" y="0.5" width="67" height="31.5" class="sp"/>
+    <rect x="13.85" y="0.5" width="40.3" height="16.5" class="sl"/><rect x="24.85" y="0.5" width="18.3" height="5.5" class="sl"/>
+    <rect x="30.3" y="-1.2" width="7.4" height="1.7" class="sgoal"/>
+    <path d="M 26.7 17 A 9.15 9.15 0 0 0 41.3 17" class="sl"/>
+    <circle cx="34" cy="11" r=".5" fill="rgba(255,255,255,.6)"/>
+    ${dots}
+  </svg>`;
+}
+function shotsBlock(m) {
+  const [h, a] = m.teams;
+  const cnt = (side, r) => (m.shots || []).filter(s => s.side === side && (!r || s.res === r)).length;
+  const col = (t, side) => `<div class="card" style="margin:0;padding:10px">
+    <div class="row between small"><b class="ellipsis">${esc(t.club.short)}</b><span class="tiny muted">${cnt(side)} chutes</span></div>
+    ${shotMapSVG(m, side)}
+    <div class="tiny muted center">⚽ ${cnt(side, 'goal')} · ◎ ${cnt(side, 'save')} no gol · ○ ${cnt(side, 'miss')} fora</div></div>`;
+  return `<h3>Mapa de chutes</h3><div class="grid2">${col(h, 0)}${col(a, 1)}</div>
+  <p class="tiny muted center" style="margin-top:6px">Cada mapa mostra a área atacada pelo time. <span class="accent">●</span> gol · ◎ defendido · ○ para fora</p>`;
 }
 
 // Aviso rápido sobre o campo (cartão, troca, lesão)
@@ -239,6 +329,7 @@ export function patchMatch(S, newEvents) {
   const tot = h.stats.poss + a.stats.poss;
   const ph = tot ? Math.round(h.stats.poss / tot * 100) : 50;
   if ($('mx-mom')) { $('mx-mom').style.width = ph + '%'; $('mx-mh').textContent = ph + '%'; $('mx-ma').textContent = (100 - ph) + '%'; }
+  if ($('mx-press')) $('mx-press').innerHTML = pressureSVG(m);
   const goal = newEvents.find(e => e.type === 'goal');
   if (goal) {
     const sb = $('mx-scoreboard');
@@ -260,7 +351,7 @@ export function patchMatch(S, newEvents) {
     // Movimento de bola e jogadores (ver pitch-anim.js)
     if (S.anim) S.anim.onMinute(newEvents, S.animMs || S.minuteMs);
   } else {
-    $('mx-body').innerHTML = tab === 'lances' ? feedHTML(S, m) : statsHTML(m) + ratingsHTML(S, m) + othersHTML(S, m);
+    $('mx-body').innerHTML = tab === 'lances' ? feedHTML(S, m) : bigPressure(m) + statsHTML(m) + shotsBlock(m) + ratingsHTML(S, m) + othersHTML(S, m);
   }
   return true;
 }

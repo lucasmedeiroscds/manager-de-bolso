@@ -12,7 +12,7 @@ import { saveGame, loadGame, downloadFile, pickFile, migrate, saveCustomDB, load
 import { clamp, money } from './util.js';
 import * as UI from './ui/ui.js';
 import * as SC from './ui/screens.js';
-import { matchScreen, patchMatch, fieldSignature, matchTacticsModal, roundSummaryScreen, pauseLabel } from './ui/match-screen.js';
+import { matchScreen, patchMatch, fieldSignature, matchTacticsModal, roundSummaryScreen, pauseLabel, talkModal } from './ui/match-screen.js';
 import { awardsScreen } from './ui/awards-screen.js';
 import { PitchAnimator } from './ui/pitch-anim.js';
 import { icon } from './ui/icons.js';
@@ -140,6 +140,7 @@ const SPEEDS = [300, 120, 40]; // milissegundos por minuto de jogo (≈27s, 11s,
 // Em lances de perigo o relógio "segura" um pouco (1x e 2x) para dar
 // tempo de ver a jogada no campo: passes, chute, defesa, gol.
 const HOLD = [1900, 900, 0];
+const HOLD_GOAL = [4200, 3000, 2200]; // gol: tempo para a jogada, a comemoração e o replay
 let holdTimer = null;
 
 function startMatchLoop() {
@@ -176,7 +177,8 @@ function tick() {
   const hurt = evs.some(e => e.type === 'injury' && e.side === myIdx);
   if (half || hurt) {
     stopMatchLoop();
-    UI.toast(half ? 'Intervalo! Ajuste o time se quiser.' : 'Jogador machucado! Toque nele no campo para trocar.');
+    if (half) setTimeout(() => UI.openModal(talkModal(S, 'half')), 400); // conversa no intervalo
+    else UI.toast('Jogador machucado! Toque nele no campo para trocar.');
   }
   if (m.finished) {
     stopMatchLoop();
@@ -186,8 +188,10 @@ function tick() {
   }
   // Lance de perigo: tempo extra para a animação
   const big = evs.some(e => e.type === 'goal' || e.type === 'save' || e.type === 'chance');
-  const extra = big && S.matchRunning ? HOLD[S.matchSpeed] : 0;
-  S.animMs = SPEEDS[S.matchSpeed] + extra;
+  const isGoal = evs.some(e => e.type === 'goal');
+  const extra = !S.matchRunning ? 0 : isGoal ? HOLD_GOAL[S.matchSpeed] : big ? HOLD[S.matchSpeed] : 0;
+  // a animação do gol usa o tempo sem contar o replay (que roda por cima)
+  S.animMs = SPEEDS[S.matchSpeed] + (isGoal ? Math.max(extra - 2200, 900) : extra);
   if (extra) holdClock(extra);
   // Mudou quem está em campo (expulsão, troca da IA)? redesenha tudo
   const sig = fieldSignature(m);
@@ -213,7 +217,9 @@ function playRound() {
   S.anim = new PitchAnimator(S);
   go('match');
   lastSig = fieldSignature(S.prep.userMatch);
-  startMatchLoop();
+  // Preleção antes do apito inicial (o jogo começa depois da escolha)
+  setPauseLabel();
+  UI.openModal(talkModal(S, 'pre'));
 }
 
 function endMatch() {
@@ -415,6 +421,18 @@ const ACTIONS = {
     render(true);
   },
   endMatch: () => endMatch(),
+  // Preleção / conversa no intervalo
+  teamTalk: d => {
+    const m = S.prep && S.prep.userMatch;
+    if (!m) return;
+    const side = m.teams.findIndex(t => t.club.id === S.game.userClubId);
+    const r = m.talk(side, d.v, d.when);
+    UI.closeModal();
+    UI.toast(`${r.mood === 'good' ? '👍' : r.mood === 'bad' ? '👎' : '🤝'} ${r.text}`, 3500);
+    if (d.when === 'pre') startMatchLoop();
+    else render(true); // segue pausado: dá para fazer trocas antes do 2º tempo
+  },
+  skipTalk: d => { UI.closeModal(); if (d.when === 'pre') startMatchLoop(); },
 
   // Salvar / carregar
   saveMenu: () => UI.openModal(SC.slotsModal('save')),

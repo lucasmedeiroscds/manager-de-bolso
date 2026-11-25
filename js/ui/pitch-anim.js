@@ -160,6 +160,7 @@ export class PitchAnimator {
     const tackle = evs.find(e => e.type === 'tackle');
     const shotEv = goal || save || miss;
     const plan = [];
+    this.path = [];   // jogada gravada (para o replay do gol)
 
     // Quem deve estar com a bola neste minuto
     let T = shotEv ? shotEv.side : tackle ? 1 - tackle.side : (m.poss ?? this.carrierTeam());
@@ -176,10 +177,11 @@ export class PitchAnimator {
       // Constrói o ataque: passes para frente até a entrada da área
       plan.push(this.act('progress', 1.1, { team: T, to: 0.55 + R() * 0.1 }));
       plan.push(this.act('progress', 1.0, { team: T, to: 0.72 + R() * 0.08, forceMate: shooter }));
-      plan.push(this.act('run', 0.6, { team: T, to: 0.82 + R() * 0.06 }));
+      // A finalização sai do local que o motor registrou (o mesmo do mapa de chutes)
+      plan.push(this.act('run', 0.6, { team: T, to: 0.82 + R() * 0.06, spot: shotEv.spot }));
       const result = goal ? 'goal' : save ? 'save' : 'miss';
       plan.push(this.act('shot', 0.55, { team: T, result }));
-      if (result === 'goal') { plan.push(this.act('hold', 1.6)); plan.push(this.act('kickoff', 0.01, { team: 1 - T })); }
+      if (result === 'goal') { plan.push(this.act('hold', 2.6)); plan.push(this.act('kickoff', 0.01, { team: 1 - T })); }
       else if (result === 'save') { plan.push(this.act('hold', 0.7)); plan.push(this.act('distribute', 0.9)); }
       else { plan.push(this.act('goalkick', 0.5, { team: 1 - T })); plan.push(this.act('distribute', 0.9)); }
     } else if (tackle) {
@@ -233,7 +235,11 @@ export class PitchAnimator {
       if (!c || this.carrierTeam() !== a.team) { a.skip = true; return; }
       const p0 = this.pos[c];
       a.p0 = { ...p0 };
-      a.to = { x: clamp(lerp(p0.x, 50, 0.4) + (R() - 0.5) * 20, 15, 85), y: this.yAt(a.team, a.to) };
+      if (a.spot) {
+        // d: 0 = linha do gol, 1 = meio-campo (metade do campo = 50%)
+        const bottom = this.bottomOf(a.team);
+        a.to = { x: bottom ? a.spot.x : 100 - a.spot.x, y: bottom ? a.spot.d * 50 : 100 - a.spot.d * 50 };
+      } else a.to = { x: clamp(lerp(p0.x, 50, 0.4) + (R() - 0.5) * 20, 15, 85), y: this.yAt(a.team, a.to) };
     } else if (a.type === 'shot') {
       const bottom = this.bottomOf(a.team);
       const line = bottom ? 0 : 100;
@@ -254,6 +260,46 @@ export class PitchAnimator {
       a.to = { ...this.pos[a.mate] };
       a.long = true;
     }
+    // Grava a jogada do time que ataca (passes, condução e chute) para o replay
+    if (!a.skip && this.path && ['progress', 'run', 'shot'].includes(a.type) && a.to) {
+      const who = a.type === 'progress' ? a.mate : this.carrier;
+      const pl = who && this.S.game.players[who];
+      this.path.push({ type: a.type, from: { ...(a.type === 'run' ? a.p0 : a.from) }, to: { ...a.to }, name: pl ? pl.name : '' });
+    }
+  }
+
+  // Replay do gol: zoom na área e a jogada desenhada sobre o campo
+  replay(teamIdx, path) {
+    const inner = document.getElementById('mx-pitch-inner');
+    if (!inner || !path || !path.length) return;
+    this.path = path;
+    inner.querySelectorAll('.replay').forEach(e => e.remove());
+    const bottom = this.bottomOf(teamIdx);
+    const goalY = bottom ? 0 : 100;
+    // zoom centrado na área onde saiu o gol
+    const last = this.path[this.path.length - 1];
+    inner.style.transformOrigin = `${clamp(last.from.x, 25, 75)}% ${bottom ? 4 : 96}%`;
+    inner.classList.remove('zoom'); void inner.offsetWidth; inner.classList.add('zoom');
+    const segs = this.path.map((s, i) => {
+      const len = Math.hypot(s.to.x - s.from.x, s.to.y - s.from.y);
+      const cls = s.type === 'shot' ? 'rp-shot' : s.type === 'run' ? 'rp-run' : 'rp-pass';
+      return `<line x1="${s.from.x}" y1="${s.from.y}" x2="${s.to.x}" y2="${clamp(s.to.y, -2, 102)}" class="${cls}"
+        style="--len:${len.toFixed(1)};animation-delay:${(i * 0.35).toFixed(2)}s" vector-effect="non-scaling-stroke"/>`;
+    }).join('');
+    const names = this.path.filter(s => s.type !== 'shot' && s.name).map((s, i) =>
+      `<span class="rp-name" style="left:${s.to.x}%;top:${s.to.y}%;animation-delay:${(i * 0.35 + 0.25).toFixed(2)}s">${s.name.split(' ').pop()}</span>`).join('');
+    const div = document.createElement('div');
+    div.className = 'replay';
+    div.innerHTML = `<svg viewBox="0 0 100 100" preserveAspectRatio="none">${segs}<circle cx="${clamp(last.to.x, 0, 100)}" cy="${goalY}" r="2.2" class="rp-goal"/></svg>${names}`;
+    inner.appendChild(div);
+    // etiqueta "REPLAY" fora da camada com zoom (para não sair do quadro)
+    const pitch = document.getElementById('mx-pitch');
+    pitch.querySelectorAll(':scope > .rp-tag').forEach(e => e.remove());
+    const tag = document.createElement('span');
+    tag.className = 'rp-tag';
+    tag.textContent = '⟲ REPLAY';
+    pitch.appendChild(tag);
+    setTimeout(() => { div.remove(); tag.remove(); inner.classList.remove('zoom'); }, 2900);
   }
 
   // Termina uma ação (consequência)
@@ -268,9 +314,11 @@ export class PitchAnimator {
         if (a.result === 'save' && a.gk) this.carrier = a.gk;
         else this.carrier = null;
         if (a.result === 'goal' && !this.flushing) {
-          // "GOOOL!" na hora em que a bola entra
+          // "GOOOL!" na hora em que a bola entra + replay da jogada
           const fl = document.getElementById('mx-flash');
           if (fl) { fl.textContent = 'GOOOL!'; fl.classList.remove('show'); void fl.offsetWidth; fl.classList.add('show'); }
+          const path = (this.path || []).slice();
+          setTimeout(() => this.replay(a.team, path), 700);
         }
         break;
       case 'goalkick': if (a.gk) { this.carrier = a.gk; this.ball = { ...this.pos[a.gk] }; } break;

@@ -4,7 +4,7 @@
 // Ao mudar qualquer arquivo do jogo, aumente o número da VERSAO
 // para o celular baixar a versão nova.
 // =============================================================
-const VERSAO = 'manager-v9';
+const VERSAO = 'manager-v10';
 const ARQUIVOS = [
   './', './index.html', './manifest.webmanifest', './icon.svg', './icon-192.png', './icon-512.png',
   './css/style.css', './data/mundo.json',

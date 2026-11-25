@@ -486,6 +486,52 @@ label { display: block; font-size: 12px; color: var(--muted); margin: 10px 0 5px
     repeating-linear-gradient(0deg, #1c7a3d 0 8.33%, #20884a 8.33% 16.66%);
   box-shadow: inset 0 0 60px rgba(0, 0, 0, .45), 0 18px 40px -18px #000;
 }
+/* preleção / intervalo */
+.talk-list { display: flex; flex-direction: column; gap: 8px; margin-top: 12px; }
+.talk-opt { justify-content: flex-start; gap: 12px; padding: 12px; min-height: 64px; border-radius: 16px; text-align: left; animation: enter .35s both; }
+.talk-opt:nth-child(2) { animation-delay: .05s; } .talk-opt:nth-child(3) { animation-delay: .1s; } .talk-opt:nth-child(4) { animation-delay: .15s; }
+.talk-opt .ic-box { width: 40px; height: 40px; border-radius: 12px; display: flex; align-items: center; justify-content: center; background: rgba(196, 255, 61, .12); color: var(--accent); flex: 0 0 auto; }
+.ev.color { border-color: var(--accent2); font-style: italic; color: #cfe9ff; }
+.ev.talk { border-color: var(--gold); }
+
+/* gráfico de pressão */
+.press-wrap { margin: -2px 0 10px; border-radius: 12px; overflow: hidden; background: rgba(0, 0, 0, .3); border: 1px solid var(--line); }
+.press-wrap.big { margin: 6px 0; }
+.press { display: block; width: 100%; }
+.press .pu { fill: color-mix(in srgb, var(--h1, #3b8cff) 75%, transparent); }
+.press .pd { fill: color-mix(in srgb, var(--a1, #ff4d6d) 75%, transparent); }
+.press .pz { stroke: rgba(255, 255, 255, .35); stroke-width: 1; }
+.press .ph { stroke: rgba(255, 255, 255, .25); stroke-width: 1; stroke-dasharray: 2 2; }
+.press .pg { stroke: var(--accent); stroke-width: 2; }
+/* mapa de chutes */
+.shotmap { display: block; width: 100%; margin: 6px 0 4px; background: linear-gradient(180deg, #1c7a3d, #20884a); border-radius: 8px; overflow: visible; }
+.shotmap .sp { fill: none; stroke: rgba(255, 255, 255, .5); stroke-width: .5; }
+.shotmap .sl { fill: none; stroke: rgba(255, 255, 255, .55); stroke-width: .5; }
+.shotmap .sgoal { fill: #fff; }
+.shotmap .sg { fill: var(--accent); stroke: #0b1400; stroke-width: .5; filter: drop-shadow(0 0 2px var(--accent)); }
+.shotmap .ss { fill: rgba(255, 255, 255, .15); stroke: #fff; stroke-width: .6; }
+.shotmap .sm { fill: rgba(0, 0, 0, .35); stroke: rgba(255, 255, 255, .55); stroke-width: .4; }
+
+/* camada interna do campo: recebe o zoom no replay do gol */
+.pitch-inner { position: absolute; inset: 0; transition: transform .7s cubic-bezier(.2, .8, .2, 1); }
+.pitch-inner.zoom { transform: scale(1.45); }
+.replay { position: absolute; inset: 0; z-index: 6; pointer-events: none; background: rgba(5, 12, 22, .28); animation: fadein .3s both; }
+.replay svg { position: absolute; inset: 0; width: 100%; height: 100%; overflow: visible; }
+.replay line { stroke-width: 3; stroke-linecap: round; stroke-dasharray: var(--len) var(--len); stroke-dashoffset: var(--len); animation: draw .45s ease-out forwards; }
+.replay .rp-pass { stroke: #fff; stroke-dasharray: 3 3; stroke-dashoffset: 0; opacity: 0; animation: show .35s ease-out forwards; }
+.replay .rp-run { stroke: var(--accent2); }
+.replay .rp-shot { stroke: var(--accent); stroke-width: 4; filter: drop-shadow(0 0 4px var(--accent)); }
+.replay .rp-goal { fill: var(--accent); animation: live 0.8s infinite; }
+@keyframes draw { to { stroke-dashoffset: 0; } }
+@keyframes show { to { opacity: 1; } }
+.rp-name {
+  position: absolute; transform: translate(-50%, -160%); font-size: 10px; font-weight: 800; white-space: nowrap;
+  background: rgba(5, 12, 22, .85); color: #fff; padding: 2px 6px; border-radius: 6px; opacity: 0; animation: show .3s forwards;
+}
+.rp-tag {
+  position: absolute; left: 8px; top: 8px; z-index: 7; font-family: var(--head); font-style: italic; font-weight: 900; font-size: 12px; letter-spacing: .1em;
+  background: var(--bad); color: #fff; padding: 3px 8px; border-radius: 6px; animation: live 1s infinite;
+}
 .pitch-lines i { position: absolute; border: 2px solid rgba(255, 255, 255, .55); }
 .pitch-lines .half { left: 0; right: 0; top: 50%; height: 0; border-width: 2px 0 0; }
 .pitch-lines .circle { left: 50%; top: 50%; width: 26%; aspect-ratio: 1; transform: translate(-50%, -50%); border-radius: 50%; }
