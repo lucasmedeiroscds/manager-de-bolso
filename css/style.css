@@ -584,7 +584,8 @@ label { display: block; font-size: 12px; color: var(--muted); margin: 10px 0 5px
   animation: ppop 2.2s ease-out forwards;
 }
 @keyframes ppop { 0% { opacity: 0; transform: translate(-50%, -10px); } 12%, 80% { opacity: 1; transform: translate(-50%, 0); } 100% { opacity: 0; transform: translate(-50%, -6px); } }
-.pitch.anim .pl, .pitch.anim .ball { transition: none; will-change: left, top; }
+/* em movimento: posição por transform (placa de vídeo), sem recalcular a página */
+.pitch.anim .pl, .pitch.anim .ball { left: 0 !important; top: 0 !important; transition: none; will-change: transform; }
 .pl.has-ball .shirt { box-shadow: 0 0 0 2px #fff, 0 0 14px rgba(255, 255, 255, .8); }
 .pl.has-ball .nm { color: #fff7c2; }
 .bench { display: flex; gap: 8px; overflow-x: auto; padding: 8px 0 4px; scrollbar-width: none; }

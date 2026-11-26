@@ -5,7 +5,7 @@
 // então funcionam offline e não pesam nada. O navegador só libera o
 // som depois do primeiro toque na tela.
 // =============================================================
-let ctx = null, master = null, crowdNode = null, crowdGain = null, noiseBuf = null;
+let ctx = null, master = null, crowdNode = null, crowdGain = null, noiseBuf = null, brownBuf = null;
 export const settings = { sfx: true, crowd: true, volume: 0.7 };
 
 export function loadSoundSettings(saved) { Object.assign(settings, saved || {}); if (master) master.gain.value = settings.volume; }
@@ -18,10 +18,15 @@ function ac() {
     master = ctx.createGain();
     master.gain.value = settings.volume;
     master.connect(ctx.destination);
-    // ruído branco (base da torcida, dos chutes e do "uuuh")
+    // ruído branco (estalo do chute, vaia) e ruído "marrom" (grave e
+    // abafado, como o ronco de um estádio — sem o chiado do ruído branco)
     noiseBuf = ctx.createBuffer(1, ctx.sampleRate * 2, ctx.sampleRate);
     const d = noiseBuf.getChannelData(0);
     for (let i = 0; i < d.length; i++) d[i] = Math.random() * 2 - 1;
+    brownBuf = ctx.createBuffer(1, ctx.sampleRate * 4, ctx.sampleRate);
+    const b = brownBuf.getChannelData(0);
+    let last = 0;
+    for (let i = 0; i < b.length; i++) { last = (last + 0.02 * (Math.random() * 2 - 1)) / 1.02; b[i] = last * 3.5; }
   }
   if (ctx.state === 'suspended') ctx.resume();
   return ctx;
@@ -76,22 +81,82 @@ export function kick() {
   tone(t, 0.12, { freq: 150, to: 50, type: 'sine', peak: 0.45, rel: 0.08 });
   noise(t, 0.05, { type: 'highpass', freq: 2500, peak: 0.12, a: 0.002, rel: 0.04 });
 }
+// ---------- Vozes da torcida ----------
+// Várias "vozes" (osciladores com timbre de vogal, cada uma num tom e num
+// ritmo diferentes) somadas soam como gente cantando/gritando — e não
+// como chiado. formants: as frequências que dão a vogal ("ôô", "uu", "aa").
+const VOWEL = { a: [[750, 6], [1200, 7]], o: [[500, 6], [900, 7]], u: [[330, 7], [760, 8]] };
+function voices(n, { base = 170, spread = 110, vowel = 'o', dest }) {
+  const c = ctx;
+  const out = c.createGain(); out.gain.value = 1;
+  const soft = c.createBiquadFilter(); soft.type = 'lowpass'; soft.frequency.value = 2400;
+  out.connect(soft).connect(dest || master);
+  const nodes = [], forms = [];
+  for (let i = 0; i < n; i++) {
+    const o = c.createOscillator(); o.type = 'sawtooth';
+    const f0 = base + Math.random() * spread; o.frequency.value = f0;
+    const vib = c.createOscillator(), vg = c.createGain();      // vibrato da voz
+    vib.frequency.value = 4 + Math.random() * 2.5; vg.gain.value = f0 * 0.025;
+    vib.connect(vg).connect(o.frequency);
+    const amp = c.createGain(); amp.gain.value = 0.5;            // cada um respira num ritmo
+    const lfo = c.createOscillator(), lg = c.createGain();
+    lfo.frequency.value = 0.15 + Math.random() * 0.5; lg.gain.value = 0.45;
+    lfo.connect(lg).connect(amp.gain);
+    const vg2 = c.createGain(); vg2.gain.value = 1 / n;
+    for (const [ff, q] of VOWEL[vowel]) {
+      const bp = c.createBiquadFilter(); bp.type = 'bandpass'; bp.frequency.value = ff * (0.92 + Math.random() * 0.16); bp.Q.value = q;
+      o.connect(bp).connect(amp); forms.push(bp);
+    }
+    amp.connect(vg2).connect(out);
+    o.start(); vib.start(); lfo.start();
+    nodes.push(o, vib, lfo);
+  }
+  return {
+    out, forms,
+    oscs: nodes.filter((_, i) => i % 3 === 0),
+    // muda o tom de todas as vozes (mult) em "dur" segundos
+    pitch(mult, t, dur) { for (const o of this.oscs) { const v = o.frequency.value; o.frequency.setTargetAtTime(v * mult, t, dur / 3); } },
+    stop(t) { for (const x of nodes) { try { x.stop(t); } catch { /* já parou */ } } }
+  };
+}
+// ronco grave do estádio (ruído marrom filtrado: nada de chiado)
+function rumble(t, dur, peak, freq = 500) {
+  const c = ac(); if (!c) return;
+  const src = c.createBufferSource(); src.buffer = brownBuf; src.loop = true;
+  const f = c.createBiquadFilter(); f.type = 'lowpass'; f.frequency.value = freq;
+  const g = c.createGain(); env(g, t, 0.15, peak, Math.max(0, dur - 1.2), 1);
+  src.connect(f).connect(g).connect(master);
+  src.start(t, Math.random() * 3); src.stop(t + dur + 0.1);
+}
+
 export function goal() {
   if (!ac()) return;
   const t = ctx.currentTime + 0.02;
-  if (settings.crowd || settings.sfx) {
-    // a torcida explode e vai baixando
-    noise(t, 3.2, { type: 'bandpass', freq: 700, q: 0.6, peak: 0.55, a: 0.12, rel: 1.6, sweepTo: 1200 });
-    noise(t + 0.05, 2.6, { type: 'bandpass', freq: 2200, q: 0.8, peak: 0.18, a: 0.1, rel: 1.2 });
+  if (settings.crowd) {
+    // a torcida explode num "GOOOL" e vai baixando
+    const g = ctx.createGain(); g.connect(master);
+    env(g, t, 0.18, 0.9, 1.6, 1.6);
+    const v = voices(14, { base: 210, spread: 160, vowel: 'o', dest: g });
+    v.pitch(1.18, t, 0.4);
+    v.pitch(0.9, t + 1.8, 1.4);
+    v.stop(t + 3.6);
+    rumble(t, 3.4, 0.5, 700);
+    crowdSwell(1.8);
   }
   if (settings.sfx) { // fanfarra curtinha
-    [523, 659, 784, 1047].forEach((f, i) => tone(t + 0.15 + i * 0.11, 0.22, { freq: f, type: 'square', peak: 0.05, rel: 0.12 }));
+    [523, 659, 784, 1047].forEach((f, i) => tone(t + 0.15 + i * 0.11, 0.22, { freq: f, type: 'square', peak: 0.04, rel: 0.12 }));
   }
 }
 export function ooh() {
   if (!settings.crowd || !ac()) return;
   const t = ctx.currentTime + 0.02;
-  noise(t, 1.1, { type: 'bandpass', freq: 520, q: 1.2, peak: 0.3, a: 0.15, rel: 0.6, sweepTo: 300 });
+  // "uuuuh": vozes em "u" que descem de tom
+  const g = ctx.createGain(); g.connect(master);
+  env(g, t, 0.12, 0.55, 0.35, 0.7);
+  const v = voices(10, { base: 190, spread: 90, vowel: 'u', dest: g });
+  v.pitch(0.72, t + 0.15, 1.0);
+  v.stop(t + 1.4);
+  rumble(t, 1.3, 0.18, 400);
 }
 export function card(red = false) {
   if (!settings.sfx || !ac()) return;
@@ -111,37 +176,42 @@ export function success() {
 }
 
 // Murmúrio da torcida ao fundo durante a partida
+const CROWD_BASE = 0.32;
 export function crowdStart() {
   if (!settings.crowd || !ac() || crowdNode) return;
-  const src = ctx.createBufferSource(); src.buffer = noiseBuf; src.loop = true;
-  const f = ctx.createBiquadFilter(); f.type = 'bandpass'; f.frequency.value = 650; f.Q.value = 0.5;
-  // ondulação lenta do volume (a torcida "respira")
-  const lfo = ctx.createOscillator(), lg = ctx.createGain();
-  lfo.frequency.value = 0.18; lg.gain.value = 0.02; lfo.connect(lg);
+  const t = ctx.currentTime;
   crowdGain = ctx.createGain(); crowdGain.gain.value = 0.0001;
-  lg.connect(crowdGain.gain);
-  crowdGain.gain.exponentialRampToValueAtTime(0.06, ctx.currentTime + 1.2);
-  src.connect(f).connect(crowdGain).connect(master);
-  src.start(); lfo.start();
-  crowdNode = { src, lfo };
+  crowdGain.connect(master);
+  crowdGain.gain.exponentialRampToValueAtTime(CROWD_BASE, t + 1.5);
+  // murmúrio: muitas vozes baixinhas em "aa" + ronco grave do estádio
+  const v = voices(10, { base: 140, spread: 130, vowel: 'a', dest: crowdGain });
+  v.out.gain.value = 0.35;
+  const src = ctx.createBufferSource(); src.buffer = brownBuf; src.loop = true;
+  const lp = ctx.createBiquadFilter(); lp.type = 'lowpass'; lp.frequency.value = 420;
+  const rg = ctx.createGain(); rg.gain.value = 0.22;
+  src.connect(lp).connect(rg).connect(crowdGain);
+  src.start();
+  crowdNode = { v, src, lp };
 }
 export function crowdStop() {
   if (!crowdNode || !ctx) return;
-  const { src, lfo } = crowdNode;
-  crowdGain.gain.cancelScheduledValues(ctx.currentTime);
-  crowdGain.gain.setValueAtTime(Math.max(0.0001, crowdGain.gain.value), ctx.currentTime);
-  crowdGain.gain.exponentialRampToValueAtTime(0.0001, ctx.currentTime + 0.6);
-  setTimeout(() => { try { src.stop(); lfo.stop(); } catch { /* já parou */ } }, 700);
+  const { v, src } = crowdNode, t = ctx.currentTime;
+  crowdGain.gain.cancelScheduledValues(t);
+  crowdGain.gain.setValueAtTime(Math.max(0.0001, crowdGain.gain.value), t);
+  crowdGain.gain.exponentialRampToValueAtTime(0.0001, t + 0.6);
+  v.stop(t + 0.7); try { src.stop(t + 0.7); } catch { /* já parou */ }
   crowdNode = null;
 }
-// Pressão no ataque: a torcida cresce um pouquinho
-export function crowdSwell() {
+// Pressão no ataque: a torcida cresce e "sobe o tom" um pouquinho
+export function crowdSwell(strength = 1) {
   if (!crowdNode || !ctx) return;
   const t = ctx.currentTime;
   crowdGain.gain.cancelScheduledValues(t);
   crowdGain.gain.setValueAtTime(Math.max(0.0001, crowdGain.gain.value), t);
-  crowdGain.gain.linearRampToValueAtTime(0.11, t + 0.4);
-  crowdGain.gain.linearRampToValueAtTime(0.06, t + 1.6);
+  crowdGain.gain.linearRampToValueAtTime(CROWD_BASE * (1 + 0.8 * strength), t + 0.5);
+  crowdGain.gain.linearRampToValueAtTime(CROWD_BASE, t + 1.5 + strength);
+  crowdNode.lp.frequency.setTargetAtTime(420 + 300 * strength, t, 0.2);
+  crowdNode.lp.frequency.setTargetAtTime(420, t + 1, 0.6);
 }
 
 // Toca os sons de um minuto da partida

@@ -203,7 +203,10 @@ function setPauseLabel() {
 function tick() {
   const m = S.prep.userMatch;
   const evs = m.step();
-  for (const x of S.prep.matches) if (x !== m) x.step();
+  // Ao vivo, só os jogos da mesma competição (os que aparecem na tela);
+  // o resto do mundo é simulado de uma vez no fim da partida
+  if (!S.prep.live) S.prep.live = S.prep.matches.filter(x => x !== m && x.leagueId === m.leagueId);
+  for (const x of S.prep.live) x.step();
   // Sons do minuto (no Campo, chute/gol/defesa tocam junto com a animação)
   Sound.playMinute(evs, { animated: !!S.anim && (S.matchTab || 'campo') === 'campo' });
   if (m.attackSide >= 0 && Math.random() < 0.35) Sound.crowdSwell();

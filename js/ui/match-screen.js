@@ -319,28 +319,34 @@ export function patchMatch(S, newEvents) {
   const [h, a] = m.teams;
   const $ = id => document.getElementById(id);
   if (!$('mx-g')) return false;
-  $('mx-g').textContent = `${h.goals} - ${a.goals}`;
+  // Gol pendente do minuto anterior (a animação não chegou a mostrar): revela já
+  if (S.revealGoal) S.revealGoal();
   $('mx-min').textContent = m.finished ? 'Encerrado' : m.minute + "'";
   $('mx-prog').style.width = (m.minute / 90 * 100) + '%';
-  $('mx-sc0').textContent = scorersLine(h);
-  $('mx-sc1').textContent = scorersLine(a);
-  const tk = $('mx-ticker');
-  const tkHtml = lastBigEvent(m);
-  if (tk.innerHTML !== tkHtml) { tk.innerHTML = tkHtml; tk.classList.remove('pop'); void tk.offsetWidth; tk.classList.add('pop'); }
+  const tab = S.matchTab || 'campo';
+  const goal = newEvents.find(e => e.type === 'goal');
+  // Placar, artilheiros e narração do gol: no Campo, só quando a bola entra
+  const reveal = () => {
+    S.revealGoal = null;
+    if (!$('mx-g')) return;
+    $('mx-g').textContent = `${h.goals} - ${a.goals}`;
+    $('mx-sc0').textContent = scorersLine(h);
+    $('mx-sc1').textContent = scorersLine(a);
+    const tk = $('mx-ticker');
+    const tkHtml = lastBigEvent(m);
+    if (tk.innerHTML !== tkHtml) { tk.innerHTML = tkHtml; tk.classList.remove('pop'); void tk.offsetWidth; tk.classList.add('pop'); }
+    if (goal) { const sb = $('mx-scoreboard'); sb.classList.remove('flash'); void sb.offsetWidth; sb.classList.add('flash'); }
+  };
+  if (goal && tab === 'campo' && S.anim && !m.finished) S.revealGoal = reveal;
+  else reveal();
   // barra de posse
   const tot = h.stats.poss + a.stats.poss;
   const ph = tot ? Math.round(h.stats.poss / tot * 100) : 50;
   if ($('mx-mom')) { $('mx-mom').style.width = ph + '%'; $('mx-mh').textContent = ph + '%'; $('mx-ma').textContent = (100 - ph) + '%'; }
   if ($('mx-press')) $('mx-press').innerHTML = pressureSVG(m);
-  const goal = newEvents.find(e => e.type === 'goal');
-  if (goal) {
-    const sb = $('mx-scoreboard');
-    sb.classList.remove('flash'); void sb.offsetWidth; sb.classList.add('flash');
-  }
   // cartões, trocas e lesões aparecem rapidinho sobre o campo
   const pop = newEvents.find(e => ['yellow', 'red', 'sub', 'injury'].includes(e.type));
   if (pop) pitchPop(pop.text);
-  const tab = S.matchTab || 'campo';
   if (tab === 'campo') {
     // Energia de cada jogador
     for (const t of m.teams) for (const f of t.onField) {

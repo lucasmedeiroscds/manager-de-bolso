@@ -50,6 +50,14 @@ export class PitchAnimator {
     this.ballEl = document.getElementById('mx-ball');
     this.els = {};
     this.root.querySelectorAll('.pl[data-pid]').forEach(el => { this.els[el.dataset.pid] = el; });
+    // Tamanho do campo em pixels (as posições viram "transform", que o
+    // celular desenha na placa de vídeo, sem recalcular a página a cada quadro)
+    const box = (this.ballEl && this.ballEl.offsetParent) || this.root;
+    const measure = () => { this.w = box.clientWidth; this.h = box.clientHeight; };
+    measure();
+    if (this.ro) this.ro.disconnect();
+    if (window.ResizeObserver) { this.ro = new ResizeObserver(measure); this.ro.observe(box); }
+    this.hasBallId = null; this.liftKey = null;
     this.computeBase();
     for (const id of this.ids) {
       if (!this.pos[id]) this.pos[id] = { ...this.base[id] };
@@ -94,7 +102,7 @@ export class PitchAnimator {
     clearInterval(this.watch);
     this.raf = null; this.watch = null;
   }
-  destroy() { this.stopLoop(); this.root = null; }
+  destroy() { this.stopLoop(); if (this.ro) this.ro.disconnect(); this.ro = null; this.root = null; }
 
   // ---------- Utilidades ----------
   teamIds(ti) { return this.ids.filter(id => this.info[id].ti === ti); }
@@ -315,10 +323,13 @@ export class PitchAnimator {
         this.ball = { ...a.to };
         if (a.result === 'save' && a.gk) this.carrier = a.gk;
         else this.carrier = null;
+        // jogada atropelada pelo minuto seguinte: sem som/comemoração atrasados
+        if (this.flushing) break;
         // sons no instante em que a bola chega: gol ou "uuuh" da torcida
         if (a.result === 'goal') Sound.goal(); else Sound.ooh();
-        if (a.result === 'goal' && !this.flushing) {
-          // "GOOOL!" na hora em que a bola entra + replay da jogada
+        if (a.result === 'goal') {
+          // "GOOOL!" + placar na hora em que a bola entra, depois o replay
+          if (this.S.revealGoal) this.S.revealGoal();
           const fl = document.getElementById('mx-flash');
           if (fl) { fl.textContent = 'GOOOL!'; fl.classList.remove('show'); void fl.offsetWidth; fl.classList.add('show'); }
           const path = (this.path || []).slice();
@@ -333,14 +344,14 @@ export class PitchAnimator {
 
   finishAll() {
     // em velocidade alta o minuto acaba antes da animação: conclui o resto na hora
-    this.flushing = false;
+    this.flushing = true;
     if (this.cur) { this.end(this.cur); this.cur = null; }
     while (this.queue.length) {
       const a = this.queue.shift();
       this.begin(a);
-      if (a.type === 'shot' && a.result === 'goal') { this.flushing = false; } // ainda mostra o GOOOL
       this.end(a);
     }
+    this.flushing = false;
   }
 
   // ---------- Quadro a quadro ----------
@@ -463,20 +474,30 @@ export class PitchAnimator {
   }
 
   render() {
+    const W = this.w || 1, H = this.h || 1;
     for (const id of this.ids) {
       const el = this.els[id], p = this.pos[id];
       if (!el || !p) continue;
-      el.style.left = p.x.toFixed(2) + '%';
-      el.style.top = p.y.toFixed(2) + '%';
-      el.classList.toggle('has-ball', id === this.carrier);
+      el.style.transform = `translate3d(${(p.x * W / 100).toFixed(1)}px,${(p.y * H / 100).toFixed(1)}px,0) translate(-50%,-50%)`;
+    }
+    // quem está com a bola: só mexe no destaque quando muda
+    if (this.hasBallId !== this.carrier) {
+      if (this.els[this.hasBallId]) this.els[this.hasBallId].classList.remove('has-ball');
+      if (this.els[this.carrier]) this.els[this.carrier].classList.add('has-ball');
+      this.hasBallId = this.carrier;
     }
     if (this.ballEl) {
-      this.ballEl.style.left = clamp(this.ball.x, -2, 102).toFixed(2) + '%';
-      this.ballEl.style.top = clamp(this.ball.y, -3, 103).toFixed(2) + '%';
-      this.ballEl.style.transform = `translate(-50%, -50%) scale(${(1 + this.lift * 0.55).toFixed(3)})`;
-      this.ballEl.style.boxShadow = this.lift > 0.05
-        ? `0 0 0 1px #000, ${(this.lift * 4).toFixed(1)}px ${(this.lift * 7).toFixed(1)}px ${(2 + this.lift * 4).toFixed(1)}px #0007`
-        : '0 0 0 1px #000, 0 2px 4px #0008';
+      const bx = clamp(this.ball.x, -2, 102) * W / 100, by = clamp(this.ball.y, -3, 103) * H / 100;
+      this.ballEl.style.transform = `translate3d(${bx.toFixed(1)}px,${by.toFixed(1)}px,0) translate(-50%,-50%) scale(${(1 + this.lift * 0.55).toFixed(2)})`;
+      // sombra da bola no alto: só atualiza quando a altura muda de verdade
+      const lk = Math.round(this.lift * 10);
+      if (lk !== this.liftKey) {
+        this.liftKey = lk;
+        const l = lk / 10;
+        this.ballEl.style.boxShadow = l > 0.05
+          ? `0 0 0 1px #000, ${(l * 4).toFixed(1)}px ${(l * 7).toFixed(1)}px ${(2 + l * 4).toFixed(1)}px #0007`
+          : '0 0 0 1px #000, 0 2px 4px #0008';
+      }
     }
   }
 }
