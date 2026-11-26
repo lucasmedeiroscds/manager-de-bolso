@@ -5,6 +5,8 @@ import { esc } from '../util.js';
 import { icon } from './icons.js';
 import { badge } from './ui.js';
 import { clubRecord, coachRecord, topList } from '../engine/records.js';
+import { rivalsOf, h2h } from '../engine/derbies.js';
+import { legendsOf, legendStats } from '../engine/legends.js';
 
 const score = x => x ? `<b>${x.gf} x ${x.ga}</b> <span class="muted">vs ${esc(x.opp)} · ${esc(x.comp)} ${x.season}</span>` : '<span class="muted">—</span>';
 const pct = r => r.games ? Math.round((r.w * 3 + r.d) / (r.games * 3) * 100) + '%' : '—';
@@ -32,6 +34,24 @@ function ranking(title, list, val, unit) {
     : '<div class="item muted small">Ainda sem registros. Jogue algumas partidas!</div>'}</div>`;
 }
 
+function legendsBlock(g, uc) {
+  const L = legendsOf(g, uc.id);
+  return `<h3>🗿 Lendas do clube</h3><div class="list">${L.length ? L.map(l => {
+    const s = legendStats(g, uc.id, l.id), p = g.players[l.id], here = p && p.clubId === uc.id;
+    return `<div class="item small legend ${p ? 'tap' : ''}" ${p ? `data-act="player" data-id="${l.id}"` : ''} style="min-height:48px"><span style="font-size:22px">🗿</span><span class="grow"><b>${esc(l.name)}</b><div class="tiny muted">${esc(l.pos)} · lenda desde ${l.season}${here ? ' · ainda no clube' : ''}</div></span><span class="tiny">${s.j} j · ${s.g} g<div class="muted">${s.a} assist.</div></span></div>`;
+  }).join('') : '<div class="item muted small">Ninguém ainda. Vira lenda quem chega a 150 jogos, 75 gols, ou 100 jogos com 40 assistências pelo clube.</div>'}</div>`;
+}
+
+function rivalsBlock(g, uc) {
+  const rv = rivalsOf(uc);
+  if (!rv.length) return '';
+  return `<h3>Rivais</h3><div class="list">${rv.map(r => {
+    const c = g.clubs.find(x => x.name === r.name);
+    const h = c ? h2h(g, c.id) : { w: 0, d: 0, l: 0, gf: 0, ga: 0 };
+    return `<div class="item small" style="min-height:48px">${c ? badge(c) : ''}<span class="grow"><b>${esc(r.name)}</b><div class="tiny muted">🔥 ${esc(r.derby)}</div></span><span class="tiny">${h.w}V ${h.d}E ${h.l}D<div class="muted">${h.gf}:${h.ga}</div></span></div>`;
+  }).join('')}</div>`;
+}
+
 export function recordsScreen(S) {
   const g = S.game, c = g.coach;
   const tab = S.recTab || 'coach';
@@ -50,6 +70,8 @@ export function recordsScreen(S) {
     const r = clubRecord(g, uc.id);
     body = `<div class="row" style="gap:10px;margin-bottom:10px">${badge(uc, 'lg')}<div><h2 style="margin:0">${esc(uc.name)}</h2><div class="tiny muted">Recordes com você no comando</div></div></div>
     ${summary(r)}
+    ${legendsBlock(g, uc)}
+    ${rivalsBlock(g, uc)}
     ${ranking('Artilheiros de todos os tempos', topList(r, 1), x => x.g + ' gols', x => x.j + ' j')}
     ${ranking('Mais jogos', topList(r, 2), x => x.j + ' jogos', x => x.g + ' g')}
     ${ranking('Mais assistências', topList(r, 3), x => x.a + ' assist.', x => x.j + ' j')}`;

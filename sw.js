@@ -4,7 +4,7 @@
 // Ao mudar qualquer arquivo do jogo, aumente o número da VERSAO
 // para o celular baixar a versão nova.
 // =============================================================
-const VERSAO = 'manager-v16';
+const VERSAO = 'manager-v17';
 const ARQUIVOS = [
   './', './index.html', './manifest.webmanifest', './icon.svg', './icon-192.png', './icon-512.png',
   './css/style.css', './data/mundo.json',
@@ -16,6 +16,10 @@ const ARQUIVOS = [
   './js/engine/morale.js',
   './js/engine/stadium.js',
   './js/engine/records.js',
+  './js/engine/press.js',
+  './js/engine/derbies.js', './js/engine/achievements.js', './js/ui/achievements-screen.js',
+  './js/engine/academy.js', './js/engine/staff.js', './js/engine/legends.js', './js/ui/clubdev-screen.js', './js/ui/notify.js',
+  './js/ui/news-screen.js',
   './js/engine/player-career.js',
   './js/ui/player-career-screen.js',
   './js/ui/records-screen.js',
@@ -45,4 +49,29 @@ self.addEventListener('fetch', e => {
       })
       .catch(() => caches.match(e.request, { ignoreSearch: true }))
   );
+});
+
+// ---------- Notificações ----------
+// Lembrete diário (periodic sync: só com o app instalado, no Chrome/Android)
+self.addEventListener('periodicsync', e => {
+  if (e.tag !== 'ef-lembrete') return;
+  e.waitUntil((async () => {
+    const c = await caches.open('ef-meta');
+    const r = await c.match('./lembrete.json');
+    if (!r) return;
+    const d = await r.json();
+    if (!d.on || Date.now() - d.at < 18 * 60 * 60 * 1000) return;   // jogou há pouco: não incomoda
+    await self.registration.showNotification('Estratégia FC', {
+      body: d.text || 'Seu time está esperando por você. Bora para a próxima rodada?',
+      tag: 'ef-lembrete', icon: 'icon-192.png', badge: 'icon-192.png'
+    });
+  })());
+});
+// Tocar na notificação abre (ou traz para frente) o jogo
+self.addEventListener('notificationclick', e => {
+  e.notification.close();
+  e.waitUntil(self.clients.matchAll({ type: 'window', includeUncontrolled: true }).then(list => {
+    const w = list.find(x => 'focus' in x);
+    return w ? w.focus() : self.clients.openWindow('./');
+  }));
 });

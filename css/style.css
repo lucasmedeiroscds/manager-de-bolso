@@ -777,3 +777,24 @@ input[type=range]::-moz-range-thumb { width: 26px; height: 26px; border-radius: 
 .pc-ovr.big { width: 56px; height: 56px; font-size: 26px; }
 .pc-train { display: grid; grid-template-columns: 92px 1fr 28px 46px; align-items: center; gap: 8px; margin: 6px 0; }
 .pc-train button { min-height: 32px; padding: 0; }
+
+/* Notícias e entrevista */
+.news-hero { margin: 10px 0; padding: 14px; border-radius: 16px; background: linear-gradient(135deg, rgba(var(--accent-rgb), .14), var(--glass)); border: 1px solid var(--line2); }
+.news-hero h2 { margin: 4px 0; font-size: 21px; line-height: 1.15; }
+.news-hero.good { border-color: rgba(47, 224, 127, .45); } .news-hero.bad { border-color: rgba(255, 77, 109, .45); }
+.press-ans { display: block; width: 100%; text-align: left; margin: 6px 0; padding: 10px 12px; min-height: 0; border-radius: 12px; font-weight: 600; font-size: 14px; }
+div.press-ans { border: 1px solid var(--line); } div.press-ans.on { border-color: var(--accent); background: rgba(var(--accent-rgb), .15); } div.press-ans.off { opacity: .45; }
+.news-item.good { border-left: 3px solid var(--good); } .news-item.bad { border-left: 3px solid var(--bad); } .news-item.quote { border-left: 3px solid var(--accent); }
+
+.tag.derby { background: linear-gradient(90deg, #ff4d2e, #ffb02e); color: #1a0800; border: 0; font-weight: 800; }
+.derby-line { position: relative; text-align: center; margin: 4px 0 8px; }
+
+/* ---------- Conquistas ---------- */
+.ach-grid { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 10px; margin-top: 12px; }
+.ach { background: var(--card); border: 1px solid var(--line); border-radius: 14px; padding: 12px; text-align: center; opacity: .55; }
+.ach.on { opacity: 1; border-color: var(--gold); box-shadow: 0 0 0 1px rgba(255,210,90,.25) inset; }
+.ach-ic { font-size: 28px; margin-bottom: 4px; }
+.acad-lv { display: flex; gap: 6px; margin: 10px 0 6px; }
+.acad-lv i { flex: 1; height: 8px; border-radius: 4px; background: rgba(255,255,255,.1); }
+.acad-lv i.on { background: linear-gradient(90deg, var(--accent), var(--gold)); }
+.legend { border-color: var(--gold) !important; }

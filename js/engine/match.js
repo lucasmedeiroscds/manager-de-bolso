@@ -328,7 +328,7 @@ export class Match {
       const fi = INSTR[this.instr[i]].fouls;
       const cf = mk.fouls * (this.talkFx[i].cards || 1) * fi;
       if (rnd() < 0.13 * mk.fouls * fi) t.stats.fouls++;
-      if (rnd() < K.YELLOW * cf) this.card(i, t, false);
+      if (rnd() < K.YELLOW * cf * (this.derby ? 1.3 : 1)) this.card(i, t, false); // clássico é mais pegado
       else if (rnd() < K.RED * cf) this.card(i, t, true);
       // Lesão
       if (rnd() < K.INJURY) this.injury(i, t);

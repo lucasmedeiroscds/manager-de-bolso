@@ -21,6 +21,10 @@ import { initCoach, setObjectives, afterUserMatch, weeklyCareer, seasonReview } 
 import { afterMatchMorale } from './morale.js';
 import { afterMatchClub, weeklyStadium, seasonEndClub } from './stadium.js';
 import { recordMatch } from './records.js';
+import { derbyName, recordH2H } from './derbies.js';
+import { weeklyAcademy, seasonAcademy } from './academy.js';
+import { weeklyStaff } from './staff.js';
+import { checkLegends } from './legends.js';
 import { isPlayerMode, pcLineup, afterPcMatch, weeklyPc } from './player-career.js';
 
 export const SAVE_VERSION = 2;
@@ -183,6 +187,8 @@ export function prepareRound(game) {
       // Público e renda já definidos antes do jogo (aparecem na tela da partida)
       const pos = table.findIndex(s => s.id === h.id) + 1;
       m.attendance = attendance(h, a, pos, l.clubIds.length);
+      m.derby = derbyName(h, a);
+      if (m.derby) m.attendance = Math.min(h.stadium, Math.round(m.attendance * 1.3)); // clássico lota
       m.income = m.attendance * h.ticketPrice;
       m.leagueId = l.id;
       matches.push(m);
@@ -214,7 +220,8 @@ function prepareCupPhase(game) {
     const pos = Math.max(1, table.findIndex(s => s.id === h.id) + 1);
     // Copa atrai mais público nas fases finais
     const boost = c.knockout ? (c.stage === 'Final' ? 1.6 : c.stage === 'Semifinal' ? 1.35 : 1.15) : 1.1;
-    m.attendance = Math.min(h.stadium, Math.round(attendance(h, a, pos, table.length || 20) * boost));
+    m.derby = derbyName(h, a);
+    m.attendance = Math.min(h.stadium, Math.round(attendance(h, a, pos, table.length || 20) * boost * (m.derby ? 1.3 : 1)));
     m.income = m.attendance * h.ticketPrice;
     m.leagueId = c.cup.id;          // "outros jogos" da mesma copa
     m.cupName = c.cup.name; m.stage = c.stage;
@@ -250,7 +257,7 @@ function finishCupPhase(game, prep) {
   if (prep.userMatch) afterUserMatch(game, prep.userMatch).forEach(msg => inbox(game, msg));
   if (prep.userMatch && isPlayerMode(game)) afterPcMatch(game, prep.userMatch).forEach(msg => inbox(game, msg));
   else if (prep.userMatch) { afterMatchMorale(game, prep.userMatch).forEach(msg => inbox(game, msg)); afterMatchClub(game, prep.userMatch); }
-  if (prep.userMatch) recordMatch(game, prep.userMatch);
+  if (prep.userMatch) { recordMatch(game, prep.userMatch); recordH2H(game, prep.userMatch); }
   game.cupWeekDone = game.round;
   return { phase: 'cup', seasonEnd: null };
 }
@@ -275,9 +282,10 @@ export function finishRound(game, prep) {
   if (prep.userMatch) afterUserMatch(game, prep.userMatch).forEach(m => inbox(game, m));
   if (prep.userMatch && isPlayerMode(game)) afterPcMatch(game, prep.userMatch).forEach(m => inbox(game, m));
   else if (prep.userMatch) { afterMatchMorale(game, prep.userMatch).forEach(m => inbox(game, m)); afterMatchClub(game, prep.userMatch); }
-  if (prep.userMatch) recordMatch(game, prep.userMatch);
+  if (prep.userMatch) { recordMatch(game, prep.userMatch); recordH2H(game, prep.userMatch); }
   if (isPlayerMode(game)) weeklyPc(game).forEach(m => inbox(game, m));
-  else weeklyStadium(game, userClub(game)).forEach(m => inbox(game, m));
+  else { weeklyStadium(game, userClub(game)).forEach(m => inbox(game, m)); weeklyStaff(game); weeklyAcademy(game); }
+  checkLegends(game).forEach(m => inbox(game, m));
   const wasOpen = windowOpen(game);
   game.round++;
   aiMarket(game);
@@ -335,7 +343,8 @@ export function endSeason(game) {
   const summary = {
     season: game.season, leagueId: ul.id, champion: champions[ul.id], champions, userPos,
     topScorer: top ? `${top.name} (${top.seasonGoals} gols)` : '-',
-    cupChampions, userCups
+    cupChampions, userCups,
+    tier: ul.tier || 1, userLost: (standings(game, ul.id).find(x => x.id === game.userClubId) || {}).d
   };
   game.history.unshift(summary);
   if (game.history.length > 30) game.history.length = 30;
@@ -388,7 +397,7 @@ export function endSeason(game) {
     if (no) inbox(game, `🧢 CONVITE: a seleção ${no.nat} (${no.rank}ª do ranking) quer você como técnico! Veja em Carreira.`);
   }
 
-  const msgs = [...seasonContracts(game), ...seasonAging(game)];
+  const msgs = [...seasonContracts(game), ...seasonAging(game), ...(isPlayerMode(game) ? [] : seasonAcademy(game))];
   msgs.forEach(m => inbox(game, m));
   aiFillSquads(game);
   const n2 = clubPlayers(game, game.userClubId).length;

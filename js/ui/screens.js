@@ -11,6 +11,7 @@ import { weeklyWages } from '../engine/finance.js';
 import { TRAIN_FOCUS, TRAIN_INTENSITY } from '../engine/evolution.js';
 import { squadRoles, moodOf, ROLE_LABEL } from '../engine/morale.js';
 import { isPlayerMode } from '../engine/player-career.js';
+import { derbyName, h2h } from '../engine/derbies.js';
 import { pcCard } from './player-career-screen.js';
 import { sponsorOffers, occupancy, EXPANSIONS, expansionCost, MAX_STADIUM } from '../engine/stadium.js';
 import { SLOTS, slotInfo } from '../storage.js';
@@ -151,6 +152,7 @@ export function hubScreen(S) {
     const fx = nm.f;
     const h = club(g, fx.h), a = club(g, fx.a);
     const opp = fx.h === uc.id ? a : h;
+    const dn = derbyName(h, a), hh = dn ? h2h(g, opp.id) : null;
     const oppInfo = nm.kind === 'league'
       ? (g.round ? (tab.findIndex(s => s.id === opp.id) + 1) + 'º lugar, ' : '')
       : (opp.leagueId !== uc.leagueId ? flag(opp.country) + ' ' : '');
@@ -168,6 +170,7 @@ export function hubScreen(S) {
         <div class="mh-vs">VS</div>
         <div class="mh-team">${badge(a, 'xl')}<b class="ellipsis">${esc(a.name)}</b></div>
       </div>
+      ${dn ? `<div class="derby-line"><span class="tag derby">🔥 CLÁSSICO · ${esc(dn)}</span><div class="tiny muted" style="margin-top:4px">Seu retrospecto: ${hh.w}V ${hh.d}E ${hh.l}D · vale mais para a diretoria e a torcida</div></div>` : ''}
       <div class="mh-meta">
         <span>${icon('stadium', 15)} ${where}${h.stadiumName && !nm.neutral ? ' · ' + esc(h.stadiumName) : ''}</span>
         ${nm.kind === 'league' && g.round ? `<span>${icon('chart', 15)} Rival em ${oppInfo.replace(', ', '')}</span>` : oppInfo ? `<span>${oppInfo}</span>` : ''}
@@ -279,7 +282,7 @@ export function squadScreen(S) {
   const avgAge = (ps.reduce((s, p) => s + p.age, 0) / (ps.length || 1)).toFixed(1);
   const withOffers = ps.filter(p => offersFor(g, p.id).length);
   return `
-  <h1>Elenco</h1>
+  <div class="row between"><h1>Elenco</h1>${isPlayerMode(g) ? '' : `<button class="btn-sm" data-act="go" data-to="clubdev">${icon('star', 15)} Base e comissão</button>`}</div>
   ${withOffers.length ? `<div class="offer-banner" data-act="go" data-to="market" data-tab="offers">${icon('bell', 18)}
     <div class="grow"><b>${withOffers.length} jogador(es) com proposta de compra</b><div class="tiny muted">Toque no jogador para aceitar ou recusar</div></div>${icon('chevron', 18, 'chev')}</div>` : ''}
   <div class="tiles">
@@ -787,9 +790,11 @@ export function moreScreen(S) {
       ${it('go', 'whistle', 'Carreira do técnico', 'Metas, diretoria, propostas e troféus', 'data-to="career"')}
       ${it('go', 'medal', 'Prêmios', 'Melhor da liga e Melhor do Mundo', 'data-to="awards"', 'style="color:var(--gold);background:rgba(255,210,90,.12)"')}
       ${it('go', 'globe', 'Seleções e Copa do Mundo', 'Ranking, convocações, Copa, Euro e Copa América', 'data-to="nations"', 'style="color:var(--accent2);background:rgba(46,230,255,.12)"')}
+      ${it('go', 'news', 'Notícias', 'Manchetes, entrevistas e mercado da bola', 'data-to="news"')}
+      ${it('go', 'star', 'Conquistas', 'Medalhas da sua carreira', 'data-to="achievements"', 'style="color:var(--gold);background:rgba(255,210,90,.12)"')}
       ${it('go', 'trophy', 'Histórico e recordes', 'Hall da fama, artilheiros e goleadas', 'data-to="records"')}
       ${isPlayerMode(g) ? '' : it('go', 'coin', 'Finanças', 'Caixa, ingressos e extrato', 'data-to="finance"')}
-      ${it('go', 'palette', 'Aparência e som', 'Tema nas cores do clube, apito, torcida', 'data-to="settings"')}
+      ${it('go', 'palette', 'Aparência e som', 'Tema, sons e notificações', 'data-to="settings"')}
     </div>
     <h3>Jogo salvo</h3>
     <div class="list stagger">

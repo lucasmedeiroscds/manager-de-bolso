@@ -23,6 +23,14 @@ import { careerScreen } from './ui/career-screen.js';
 import { recordsScreen } from './ui/records-screen.js';
 import { newPlayerScreen, pcareerScreen, pcMomentModal } from './ui/player-career-screen.js';
 import * as PC from './engine/player-career.js';
+import { matchHeadline, interview, answerInterview, addPress } from './engine/press.js';
+import { newsScreen } from './ui/news-screen.js';
+import { achievementsScreen } from './ui/achievements-screen.js';
+import { clubdevScreen } from './ui/clubdev-screen.js';
+import * as ACAD from './engine/academy.js';
+import { setStaff } from './engine/staff.js';
+import * as Notif from './ui/notify.js';
+import { checkAchievements } from './engine/achievements.js';
 import { nationsScreen, squadModal } from './ui/nations-screen.js';
 import { negotiationModal, updateNegotiation, compareModal } from './ui/market-ui.js';
 import { negotiate, askingPrice, wageAsk } from './engine/market.js';
@@ -39,6 +47,7 @@ function loadSettings() {
   // Nova identidade (v15): todos começam no azul e dourado; dá para voltar às cores do clube nos Ajustes
   if (!s.v15) { s.theme = 'default'; s.v15 = true; }
   Sound.loadSoundSettings({ sfx: s.sfx, crowd: s.crowd, volume: s.volume });
+  Notif.initNotif(s.notif);
   return s;
 }
 function saveSettings() {
@@ -77,7 +86,7 @@ const SCREENS = {
   start: SC.startScreen, chooseClub: SC.chooseClubScreen, hub: SC.hubScreen,
   squad: SC.squadScreen, tactics: SC.tacticsScreen, table: SC.tableScreen,
   market: SC.marketScreen, finance: SC.financeScreen, more: SC.moreScreen,
-  match: matchScreen, roundSummary: roundSummaryScreen, awards: awardsScreen, records: recordsScreen, newPlayer: newPlayerScreen, pcareer: pcareerScreen, career: careerScreen, nations: nationsScreen, settings: settingsScreen
+  match: matchScreen, roundSummary: roundSummaryScreen, awards: awardsScreen, records: recordsScreen, newPlayer: newPlayerScreen, news: newsScreen, achievements: achievementsScreen, clubdev: clubdevScreen, pcareer: pcareerScreen, career: careerScreen, nations: nationsScreen, settings: settingsScreen
 };
 
 // Pergunta o nome do técnico ao começar um jogo novo (devolve null se cancelar)
@@ -148,7 +157,16 @@ function result(r, reopenId) {
   if (reopenId && S.game.players[reopenId]) showPlayer(reopenId);
 }
 
+function reminderText() {
+  const g = S.game;
+  if (!g || (g.coach && g.coach.fired)) return null;
+  const n = nextUserMatch(g);
+  if (!n) return null;
+  const club = id => (g.clubs.find(c => c.id === id) || {}).name || '?';
+  return `⚽ Hoje tem jogo: ${club(n.f.h)} x ${club(n.f.a)} (${n.name}). Bora comandar o time?`;
+}
 function autosave() {
+  try { Notif.saveReminder(reminderText()); } catch { /* */ }
   if (S.game) saveGame(S.game, 'auto').then(ok => { if (!ok) UI.toast('⚠️ Não foi possível salvar automaticamente.'); });
 }
 
@@ -192,6 +210,7 @@ function startMatchLoop() {
   S.minuteMs = SPEEDS[S.matchSpeed];
   setPauseLabel();
   Sound.crowdStart(); // murmúrio da torcida enquanto o jogo corre
+  if (S.prep && S.prep.userMatch && S.prep.userMatch.derby) Sound.crowdSwell(1.6); // clássico: arquibancada pegando fogo
   timer = setInterval(tick, SPEEDS[S.matchSpeed]);
 }
 function stopMatchLoop() {
@@ -238,6 +257,7 @@ function tick() {
     patchMatch(S, evs);
     Sound.crowdSwell(1.2);
     setTimeout(() => UI.openModal(pcMomentModal(S)), 350);
+    Notif.notify('🎯 Sua jogada!', 'A bola chegou para você. Volte e decida o lance!', 'ef-jogo');
     return;
   }
   if ((half || hurt) && !PC.isPlayerMode(S.game)) {
@@ -252,6 +272,11 @@ function tick() {
     patchMatch(S, evs);
     setTimeout(() => UI.openModal(penModal(S)), 600);
     return;
+  }
+  if (document.hidden) {
+    for (const e of evs) if (e.type === 'goal') Notif.notify(e.side === myIdx ? '⚽ GOL DO SEU TIME!' : '😬 Gol do adversário', `${m.teams[0].club.name} ${m.teams[0].goals} x ${m.teams[1].goals} ${m.teams[1].club.name} · ${m.minute}'`, 'ef-jogo');
+    if (half) Notif.notify('⏸️ Intervalo', 'Volte para conversar com o time no vestiário.', 'ef-jogo');
+    if (m.finished) Notif.notify('🏁 Fim de jogo', `${m.teams[0].club.name} ${m.teams[0].goals} x ${m.teams[1].goals} ${m.teams[1].club.name}`, 'ef-jogo');
   }
   if (m.finished) return matchOver();
   // Lance de perigo: tempo extra para a animação
@@ -291,6 +316,15 @@ function playRound() {
   UI.openModal(talkModal(S, 'pre'));
 }
 
+// Avisa conquistas novas (depois de cada semana)
+function announceAch() {
+  const f = checkAchievements(S.game);
+  if (!f.length) return;
+  Sound.success();
+  Notif.notify('🏅 Conquista desbloqueada', f.map(a => a.emoji + ' ' + a.name).join(' · '), 'ef-ach');
+  setTimeout(() => UI.toast('🏅 Conquista: ' + f.map(a => a.emoji + ' ' + a.name).join(' · '), 4500), 600);
+}
+
 function endMatch() {
   const roundIndex = S.game.round;
   const m = S.prep.userMatch;
@@ -307,7 +341,11 @@ function endMatch() {
   if (S.anim) { S.anim.destroy(); S.anim = null; }
   Sound.crowdStop();
   const out = finishRound(S.game, S.prep);
-  S.lastRound = { roundIndex, fixtures, title, seasonEnd: out.seasonEnd };
+  announceAch();
+  // Manchete e entrevista depois do jogo
+  const headline = matchHeadline(S.game, m);
+  if (headline) addPress(S.game, headline);
+  S.lastRound = { roundIndex, fixtures, title, seasonEnd: out.seasonEnd, press: { headline, iv: interview(S.game, m), answered: null } };
   S.prep = null;
   autosave();
   go('roundSummary');
@@ -319,6 +357,7 @@ function advanceWeek(quiet = false) {
   while (prep.phase === 'cup') { finishRound(S.game, prep); prep = prepareRound(S.game); }
   const roundIndex = S.game.round;
   const out = finishRound(S.game, prep);
+  announceAch();
   S.prep = null;
   if (out.seasonEnd) {
     autosave();
@@ -332,6 +371,18 @@ function advanceWeek(quiet = false) {
 
 // ---------- Ações (cada botão tem data-act="nome") ----------
 const ACTIONS = {
+  notifOn: async () => {
+    if (!Notif.notifSupported()) return UI.toast('Este navegador não aceita notificações.');
+    const ok = await Notif.askNotif();
+    S.settings.notif = ok; saveSettings();
+    UI.toast(ok ? '🔔 Notificações ligadas!' : 'Permissão negada. Libere nas configurações do celular (Notificações do site/app).', 4500); render(true);
+  },
+  notifOff: () => { S.settings.notif = false; Notif.setNotifEnabled(false); saveSettings(); Notif.saveReminder(null); UI.toast('🔕 Notificações desligadas.'); render(true); },
+  devTab: d => { S.devTab = d.v; render(true); },
+  acadUp: () => { const r = ACAD.upgradeAcademy(S.game); UI.toast(r.msg, 3500); if (r.ok) { Sound.success(); autosave(); } render(true); },
+  kidUp: d => { const r = ACAD.promoteKid(S.game, d.id); UI.toast(r.msg, 3500); if (r.ok) autosave(); render(true); },
+  kidOut: async d => { if (!(await UI.confirmBox('Dispensar este garoto da base?'))) return; const r = ACAD.releaseKid(S.game, d.id); UI.toast(r.msg); autosave(); render(true); },
+  staffSet: d => { const r = setStaff(S.game, d.k, Number(d.v)); UI.toast(r.msg); autosave(); render(true); },
   closeModal: () => UI.closeModal(),
   go: d => {
     UI.closeModal();
@@ -564,6 +615,12 @@ const ACTIONS = {
   matchSkip: () => { stopMatchLoop(); S.subOut = null; for (const x of S.prep.matches) x.runToEnd(); render(); },
   matchTab: d => { S.matchTab = d.v; render(true); },
   recTab: d => { S.recTab = d.v; render(true); },
+  pressAnswer: d => {
+    const pr = S.lastRound && S.lastRound.press;
+    if (!pr || !pr.iv || pr.answered) return;
+    pr.answered = { idx: Number(d.v), fx: answerInterview(S.game, pr.iv, Number(d.v)) };
+    autosave(); render(true);
+  },
   // Carreira de jogador
   newPlayerGo: () => { if (!S.db) return UI.toast('Aguarde o banco de dados carregar.'); go('newPlayer'); },
   npSet: d => { S.np[d.k] = d.v; const n = document.getElementById('np-name'); if (n) S.np.name = n.value; render(true); },

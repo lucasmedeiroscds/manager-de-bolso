@@ -20,6 +20,7 @@ import { zoneSizes } from './divisions.js';
 import { addTx } from './finance.js';
 import { money } from '../util.js';
 import { nationOffer } from './national-coach.js';
+import { rivalsOf } from './derbies.js';
 
 export const LEVELS = [
   [0, 'Iniciante'], [25, 'Promissor'], [40, 'Experiente'], [55, 'Respeitado'],
@@ -90,6 +91,14 @@ export function setObjectives(game) {
     objs.push({ id: 'C' + cup.id, kind: 'cup', cupId: cup.id, stage, text: `${cup.name}: chegar ${stage === 'Semifinal' ? 'à semifinal' : stage === 'Final' ? 'à final' : stage === 'Fase de grupos' ? 'à fase de grupos' : 'às ' + stage.toLowerCase()}`, weight: cup.type === 'national' ? 1 : 2 });
   }
   objs.push({ id: 'F', kind: 'finance', text: 'Terminar a temporada com o caixa positivo', weight: 1 });
+  // Base: revelar pelo menos um garoto
+  objs.push({ id: 'Y', kind: 'youth', season: game.season, text: 'Promover 1 garoto da base ao time principal', weight: 1 });
+  // Clássico: se houver rival na mesma liga
+  const rivals = rivalsOf(uc).map(r => game.clubs.find(x => x.name === r.name)).filter(x => x && L.clubIds.includes(x.id));
+  if (rivals.length) objs.push({ id: 'D', kind: 'derby', season: game.season, text: `Vencer o clássico contra o ${rivals[0].name}`, rivalIds: rivals.map(x => x.id), weight: 1 });
+  // Bônus em dinheiro por meta cumprida
+  const weekly = uc.deal ? uc.deal.base : uc.sponsor;
+  for (const o of objs) o.bonus = Math.round(weekly * o.weight * 1.5 / 10000) * 10000;
   c.objectives = objs;
 }
 
@@ -133,6 +142,14 @@ export function evaluate(game, o, final = false) {
     if (eliminated(cup, uc)) return { state: 'fail', detail: `Caiu (${reached})` };
     return { state: final ? 'fail' : 'ok', detail: reached };
   }
+  if (o.kind === 'youth') {
+    const n = ((game.academy && game.academy.promoted) || []).filter(x => x.season === o.season).length;
+    return { state: n ? 'done' : final ? 'fail' : 'ok', detail: n ? `${n} promovido(s)` : 'Elenco → Base e comissão' };
+  }
+  if (o.kind === 'derby') {
+    const w = ((game.derbyLog || []).filter(x => x.season === o.season && o.rivalIds.includes(x.opp) && x.res === 'w')).length;
+    return { state: w ? 'done' : final ? 'fail' : 'ok', detail: w ? 'Vitória no clássico!' : 'Ainda sem vitória' };
+  }
   // finanças
   const club = clubById(game, uc);
   if (final) return { state: club.budget >= 0 ? 'done' : 'fail', detail: '' };
@@ -160,6 +177,7 @@ export function afterUserMatch(game, m) {
   if (ga - gf >= 3) { db -= 3; df -= 5; }            // goleada sofrida
   if (gf - ga >= 3) { db += 1; df += 3; }            // goleada aplicada
   if (m.knockout && m.winnerIndex() !== me) { db -= 3; df -= 4; } // eliminação
+  if (m.derby) { db *= 1.5; df *= 1.8; } // clássico vale mais (e dói mais)
   c.board = clamp(c.board + db, 0, 100);
   c.fans = clamp(c.fans + df, 0, 100);
   c.stats.games++;
@@ -314,6 +332,9 @@ export function seasonReview(game, summary) {
   const uc = clubById(game, game.userClubId);
   const results = c.objectives.map(o => ({ text: o.text, weight: o.weight, ...evaluate(game, o, true) }));
   let repDelta = 0, boardDelta = 0;
+  let bonus = 0;
+  c.objectives.forEach((o, i) => { if (results[i].state === 'done' && o.bonus) { bonus += o.bonus; results[i].bonus = o.bonus; } });
+  if (bonus) addTx(game, uc.id, 'Bônus por metas cumpridas', bonus);
   for (const r of results) {
     repDelta += r.state === 'done' ? r.weight * 1.6 : -r.weight * 1.4;
     boardDelta += r.state === 'done' ? r.weight * 4 : -r.weight * 5;
@@ -352,5 +373,5 @@ export function seasonReview(game, summary) {
     delete c.ultimatum;
   }
   for (const o of c.offers) o.expires = 4; // valem até a 5ª semana da próxima temporada
-  return { results, repDelta: Math.round(repDelta), titles: titles.map(t => t.name), firedNow, rep: c.rep, level: coachLevel(c.rep) };
+  return { results, bonus, repDelta: Math.round(repDelta), titles: titles.map(t => t.name), firedNow, rep: c.rep, level: coachLevel(c.rep) };
 }

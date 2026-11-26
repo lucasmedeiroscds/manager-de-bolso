@@ -115,8 +115,8 @@ export function careerScreen(S) {
 
   ${c.fired ? '' : `<div class="section-title"><h3>Metas de ${g.season}</h3><span class="tag ${done ? 'good' : ''}">${done}/${evs.length}</span></div>
   <div class="list stagger">${evs.map(({ o, s }) => `<div class="item">
-    <span class="ic-box" style="width:36px;height:36px;border-radius:10px;display:flex;align-items:center;justify-content:center;background:rgba(255,255,255,.06)">${icon(o.kind === 'league' ? 'chart' : o.kind === 'cup' ? 'trophy' : 'coin', 18)}</span>
-    <div class="grow"><b class="small">${esc(o.text)}</b><div class="tiny muted">${esc(s.detail || '')}</div></div>${stateTag(s)}</div>`).join('')}</div>`}
+    <span class="ic-box" style="width:36px;height:36px;border-radius:10px;display:flex;align-items:center;justify-content:center;background:rgba(255,255,255,.06)">${icon(o.kind === 'league' ? 'chart' : o.kind === 'cup' ? 'trophy' : o.kind === 'youth' ? 'star' : o.kind === 'derby' ? 'fire' : 'coin', 18)}</span>
+    <div class="grow"><b class="small">${esc(o.text)}</b><div class="tiny muted">${esc(s.detail || '')}${o.bonus ? ` · bônus ${money(o.bonus)}` : ''}</div></div>${stateTag(s)}</div>`).join('')}</div>`}
 
   <div class="section-title"><h3>Sala de troféus</h3></div>
   ${c.trophies.length ? `<div class="trophies">${c.trophies.slice().reverse().map((t, i) => `<div class="trophy" style="animation-delay:${i * 0.05}s">
@@ -154,6 +154,7 @@ export function reviewBlock(r) {
   return `<div class="card">
     <h2>${icon('chart', 18)} Balanço do técnico</h2>
     <div class="list" style="margin:8px 0">${r.results.map(x => `<div class="item small" style="min-height:44px"><span class="grow">${esc(x.text)}<div class="tiny muted">${esc(x.detail || '')}</div></span>${x.state === 'done' ? '<span class="tag good">✔</span>' : '<span class="tag bad">✘</span>'}</div>`).join('')}</div>
+    ${r.bonus ? `<p class="center good">💰 Bônus por metas: <b>${money(r.bonus)}</b></p>` : ''}
     <p class="center">Reputação <b class="${r.repDelta >= 0 ? 'good' : 'bad'}">${r.repDelta >= 0 ? '+' : ''}${r.repDelta}</b> → <b>${r.rep}</b> (${esc(r.level)})</p>
     ${r.titles.length ? `<p class="center accent"><b>🏆 ${r.titles.map(esc).join(' · ')}</b></p>` : ''}
     ${r.firedNow ? '<p class="center bad"><b>A diretoria não vai renovar com você.</b> Escolha uma proposta em Carreira.</p>' : ''}

@@ -5,6 +5,7 @@ import { esc } from '../util.js';
 import { icon } from './icons.js';
 import { themeFor } from './theme.js';
 import { badge } from './ui.js';
+import { notifPermission } from './notify.js';
 
 export function settingsScreen(S) {
   const st = S.settings;
@@ -37,5 +38,16 @@ export function settingsScreen(S) {
       <button class="btn-sm" data-act="testSound" data-v="ooh">${icon('users', 15)} Torcida</button>
     </div>
     <p class="tiny muted mt">Os sons são gerados pelo próprio jogo (sem arquivos), funcionam offline e não gastam internet. No celular, o som respeita o volume e o modo silencioso do aparelho.</p>
+  </div>
+
+  <div class="section-title"><h3>${icon('bell', 15)} Notificações</h3></div>
+  <div class="card">
+    ${notifPermission() === 'unsupported' ? '<p class="small muted">Este navegador não aceita notificações.</p>' : `
+    <div class="chips">
+      <button class="chip ${st.notif && notifPermission() === 'granted' ? 'on' : ''}" data-act="notifOn">🔔 Ligadas</button>
+      <button class="chip ${st.notif && notifPermission() === 'granted' ? '' : 'on'}" data-act="notifOff">🔕 Desligadas</button>
+    </div>
+    ${notifPermission() === 'denied' ? '<p class="tiny bad mt">O celular bloqueou as notificações deste app. Libere em Configurações → Apps/Sites → Notificações.</p>' : ''}`}
+    <p class="tiny muted mt" style="margin-bottom:0">Avisa quando você sai do app no meio de um jogo: gols, intervalo, sua jogada e o fim da partida. Com o app instalado no Android, também manda às vezes um lembrete do próximo jogo (o próprio celular escolhe a hora).</p>
   </div>`;
 }

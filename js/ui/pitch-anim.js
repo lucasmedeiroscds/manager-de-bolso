@@ -384,14 +384,14 @@ export class PitchAnimator {
           const c = this.carrier;
           const p = { x: lerp(a.p0.x, a.to.x, ease(k)), y: lerp(a.p0.y, a.to.y, ease(k)) };
           if (c && this.pos[c]) this.pos[c] = { ...p };
-          this.ball = { x: p.x + 0.6, y: p.y + this.info[c].dir * 1.6 };
+          this.ball = { x: p.x + 0.6, y: p.y + ((this.info[c] || {}).dir || 1) * 1.6 };
         }
       }
       if (k >= 1) { this.end(a); this.cur = null; }
     }
     // Bola "grudada" em quem conduz quando não há ação de bola
     const moving = a && !a.skip && ['progress', 'distribute', 'steal', 'shot', 'run'].includes(a.type);
-    if (!moving && this.carrier && this.pos[this.carrier]) {
+    if (!moving && this.carrier && this.pos[this.carrier] && this.info[this.carrier]) {
       const cp = this.pos[this.carrier], d = this.info[this.carrier].dir;
       this.ball.x = lerp(this.ball.x, cp.x + 0.6, Math.min(1, dt * 12));
       this.ball.y = lerp(this.ball.y, cp.y + d * 1.6, Math.min(1, dt * 12));

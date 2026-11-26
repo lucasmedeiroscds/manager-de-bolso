@@ -5,6 +5,7 @@ import { rnd, randInt, clamp, pick } from '../util.js';
 import { overall, marketValue, wageDemand, POS_WEIGHTS } from './ratings.js';
 import { youthIntake } from '../data/generator.js';
 import { touchPlayers } from './tactics.js';
+import { staffFx } from './staff.js';
 
 export const TRAIN_FOCUS = {
   'Equilibrado': null, // usa os atributos mais importantes da posição
@@ -49,17 +50,19 @@ export function weeklyEvolution(game) {
     if (!club) continue;
     const tr = club.training || { focus: 'Equilibrado', intensity: 'Normal' };
     const it = TRAIN_INTENSITY[tr.intensity] || TRAIN_INTENSITY.Normal;
+    const sf = club.id === game.userClubId ? staffFx(game, club.id) : null;
     {
       // Recuperação de lesão
       if (p.injury > 0) {
         p.injury--;
+        if (sf && p.injury > 0 && rnd() < sf.healChance) p.injury--;
         if (p.injury === 0 && club.id === game.userClubId) msgs.push(`${p.name} está recuperado da lesão.`);
         p.fitness = Math.min(p.fitness, 70);
         continue; // (sai do bloco: lesionado não treina)
       }
       // Recuperação física
       // (titular que joga toda semana vai cansando: vale a pena revezar)
-      p.fitness = clamp(p.fitness + 12 + p.attrs.res / 10 + it.recover, 10, 100);
+      p.fitness = clamp(p.fitness + 12 + p.attrs.res / 10 + it.recover + (sf ? sf.recover : 0), 10, 100);
       // Moral volta devagar para o "normal" (60)
       p.moral += (60 - p.moral) * 0.08;
       // Evolução: jovens crescem mais rápido
@@ -68,14 +71,15 @@ export function weeklyEvolution(game) {
         const base = p.age <= 20 ? 0.32 : p.age <= 23 ? 0.22 : p.age <= 27 ? 0.1 : 0.03;
         // Quem joga evolui mais
         const playing = p.apps > 0 ? 1.15 : 0.9;
-        if (rnd() < base * it.growth * playing) {
+        const sg = sf ? sf.growth * (p.pos === 'GOL' ? sf.gkGrowth : 1) : 1;
+        if (rnd() < base * it.growth * playing * sg) {
           const k = attrToTrain(p, tr.focus);
           p.attrs[k] = Math.min(99, p.attrs[k] + 1);
           if (overall(p) > p.potential) p.attrs[k]--; // não passa do potencial
         }
       }
       // Lesão no treino (treino forte é arriscado)
-      if (rnd() < it.injury) {
+      if (rnd() < it.injury * (sf ? sf.injuryMult : 1)) {
         p.injury = randInt(1, 3);
         if (club.id === game.userClubId) msgs.push(`${p.name} se lesionou no treino (${p.injury} sem.).`);
       }
@@ -116,6 +120,7 @@ export function seasonAging(game) {
   // Base: 2 garotos por clube (FICTÍCIOS: a base real não é conhecida)
   let next = game.nextPlayerId;
   for (const club of game.clubs) {
+    if (club.id === game.userClubId && game.mode !== 'player') continue;   // usuário: categorias de base (academy.js)
     const kids = youthIntake(rnd, club, 0, 2);
     for (const k of kids) {
       k.id = 'g' + (next++);

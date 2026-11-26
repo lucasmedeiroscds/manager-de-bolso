@@ -187,7 +187,7 @@ export function matchScreen(S) {
       <div class="prog"><i id="mx-prog" style="width:${m.minute / 90 * 100}%"></i></div></div>
     <div class="t">${badge(a.club, 'lg')}<span class="ellipsis" style="max-width:110px">${esc(a.club.name)}</span><span class="tiny" id="mx-sc1">${scorersLine(a)}</span></div>
   </div>
-  <div class="mx-info small"><b class="row" style="gap:5px">${m.cupName ? icon('trophy', 15) + ' ' + esc(m.cupName) + ' · ' + esc(m.stage) : icon('calendar', 15) + ' ' + esc((S.game.leagues.find(l => l.id === m.leagueId) || {}).name || '') + ' · Rodada ' + (S.game.round + 1)}</b>${m.knockout ? ' <span class="tag warn">mata-mata</span>' : ''}</div>
+  <div class="mx-info small"><b class="row" style="gap:5px">${m.cupName ? icon('trophy', 15) + ' ' + esc(m.cupName) + ' · ' + esc(m.stage) : icon('calendar', 15) + ' ' + esc((S.game.leagues.find(l => l.id === m.leagueId) || {}).name || '') + ' · Rodada ' + (S.game.round + 1)}</b>${m.knockout ? ' <span class="tag warn">mata-mata</span>' : ''}${m.derby ? ` <span class="tag derby">🔥 ${esc(m.derby)}</span>` : ''}</div>
   <div class="mx-info tiny muted"><span>${icon('stadium', 14)} ${esc(home.stadiumName || 'Estádio do ' + home.name)}</span><span>${icon('users', 14)} ${(m.attendance || 0).toLocaleString('pt-BR')}</span><span>${icon('coin', 14)} ${money(m.income || 0)}</span></div>
   <div class="momentum" style="--h1:${col(h.club)};--a1:${col(a.club)}">${momentumHTML(m)}</div>
   <div class="press-wrap" id="mx-press" style="--h1:${col(h.club)};--a1:${col(a.club)}">${pressureSVG(m)}</div>
@@ -390,6 +390,16 @@ export function matchTacticsModal(S) {
   <p class="tiny muted">As mudanças valem a partir do próximo minuto.</p>`;
 }
 
+// Manchete + entrevista coletiva (no resumo da rodada)
+function pressBlock(pr) {
+  if (!pr || !pr.headline) return '';
+  const h = pr.headline, iv = pr.iv;
+  return `<div class="news-hero ${h.tone}"><div class="tiny">${icon('news', 13)} MANCHETE</div><h2>${esc(h.title)}</h2><p class="small">${esc(h.text)}</p></div>
+  ${iv ? `<div class="card"><div class="tiny muted">${icon('whistle', 13)} ENTREVISTA</div><p style="margin:6px 0 10px"><b>“${esc(iv.q)}”</b></p>
+    ${iv.a.map((t, i) => pr.answered ? `<div class="press-ans ${pr.answered.idx === i ? 'on' : 'off'}">${esc(t)}</div>` : `<button class="press-ans" data-act="pressAnswer" data-v="${i}">${esc(t)}</button>`).join('')}
+    ${pr.answered ? `<p class="tiny accent" style="margin:8px 0 0">${esc(pr.answered.fx)}</p>` : '<p class="tiny muted" style="margin:8px 0 0">Sua resposta mexe na moral, na diretoria e na torcida.</p>'}</div>` : ''}`;
+}
+
 // Resumo depois da rodada
 export function roundSummaryScreen(S) {
   const g = S.game;
@@ -397,6 +407,7 @@ export function roundSummaryScreen(S) {
   return `
   <h1>${r.fixtures.length ? 'Resultados' : 'Semana ' + (r.roundIndex + 1)}</h1>
   ${r.title ? `<p class="muted small">${esc(r.title)}</p>` : ''}
+  ${pressBlock(r.press)}
   <div class="list">${r.fixtures.map(f => resultRow(g, f)).join('') || '<div class="item muted small">Sua liga não jogou nesta semana.</div>'}</div>
   ${r.seasonEnd ? `<div class="card hl center">
     <div style="font-size:40px">🏆</div>
