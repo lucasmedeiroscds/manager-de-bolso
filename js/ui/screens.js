@@ -11,6 +11,17 @@ import { weeklyWages } from '../engine/finance.js';
 import { TRAIN_FOCUS, TRAIN_INTENSITY } from '../engine/evolution.js';
 import { squadRoles, moodOf, ROLE_LABEL } from '../engine/morale.js';
 import { isPlayerMode } from '../engine/player-career.js';
+import { challengeBanner } from './modes-screen.js';
+import { eventView } from '../engine/events.js';
+
+// Evento aleatório esperando a sua decisão
+export function eventCard(g) {
+  const v = eventView(g);
+  if (!v) return '';
+  return `<div class="card event-card"><div class="row" style="gap:10px"><span style="font-size:32px">${v.emoji}</span><div class="grow"><div class="tiny muted">EVENTO · DECIDA AGORA</div><b>${esc(v.title)}</b></div></div>
+    <p class="small" style="margin:8px 0">${esc(v.text)}</p>
+    ${v.opts.map(([k, l, d]) => `<button class="talk-opt" data-act="eventAnswer" data-v="${k}"><span class="grow" style="text-align:left"><b>${l}</b><span class="small muted" style="display:block">${esc(d)}</span></span></button>`).join('')}</div>`;
+}
 import { derbyName, h2h } from '../engine/derbies.js';
 import { pcCard } from './player-career-screen.js';
 import { sponsorOffers, occupancy, EXPANSIONS, expansionCost, MAX_STADIUM } from '../engine/stadium.js';
@@ -70,6 +81,7 @@ export function startScreen(S) {
   <div class="list stagger">
     <div class="item tap menu-item" data-act="go" data-to="chooseClub" ${db ? '' : 'style="opacity:.5;pointer-events:none"'}><span class="ic-box">${icon('bolt')}</span><div class="grow"><b>Novo jogo</b><div class="small muted">Escolha um clube em qualquer continente</div></div>${icon('chevron', 18, 'chev')}</div>
     <div class="item tap menu-item" data-act="loadMenu"><span class="ic-box">${icon('folder')}</span><div class="grow"><b>Carregar jogo</b><div class="small muted">Espaços salvos neste aparelho</div></div>${icon('chevron', 18, 'chev')}</div>
+    <div class="item tap menu-item" data-act="go" data-to="challenges" ${db ? '' : 'style="opacity:.5;pointer-events:none"'}><span class="ic-box">${icon('target')}</span><div class="grow"><b>Desafios</b><div class="small muted">Missões prontas: fuga do rebaixamento, gigante em crise…</div></div>${icon('chevron', 18, 'chev')}</div>
     <div class="item tap menu-item" data-act="newPlayerGo" ${db ? '' : 'style="opacity:.5;pointer-events:none"'}><span class="ic-box">${icon('users')}</span><div class="grow"><b>Carreira de jogador</b><div class="small muted">Crie um craque de 17 anos e viva a carreira dele</div></div>${icon('chevron', 18, 'chev')}</div>
     <div class="item tap menu-item" data-act="importSave"><span class="ic-box">${icon('download')}</span><div class="grow"><b>Importar jogo de arquivo</b><div class="small muted">Backup exportado antes</div></div>${icon('chevron', 18, 'chev')}</div>
   </div>
@@ -178,6 +190,7 @@ export function hubScreen(S) {
       <div class="strength"><b>${sh}</b><div><div class="duel"><i style="width:${sharePct}%"></i></div><div class="tiny muted center" style="margin-top:3px">FORÇA DOS TIMES</div></div><b>${sa}</b></div>
       ${nm.kind === 'cup' ? `<p class="tiny muted center" style="position:relative">Meio de semana${userFixture(g) ? ' · o jogo da liga vem depois' : ''}${!nm.stage.startsWith('Grupo') ? ' · empate vai para os pênaltis' : ''}</p>` : ''}
       <button class="btn-main" data-act="playRound">${icon('play', 20)} Jogar partida</button>
+      <button class="btn-block btn-sm mt btn-ghost" data-act="quickSim">${icon('fast', 16)} Simulação rápida (para no que importa)</button>
       ${isPlayerMode(g) ? `<p class="tiny muted center" style="position:relative;margin:8px 0 0">Você: <b>${esc(g.pc.role)}</b> · quem escala é o técnico</p>` : `<button class="btn-block btn-sm mt btn-ghost" data-act="go" data-to="tactics">${icon('tactics', 16)} Ajustar escalação</button>`}
     </div>`;
   } else {
@@ -212,6 +225,8 @@ export function hubScreen(S) {
     <div class="tile"><div class="k">${icon('market', 13)} Mercado</div><div class="v ${windowOpen(g) ? 'good' : 'muted'}">${windowOpen(g) ? 'Aberto' : 'Fechado'}</div></div>
     <div class="tile"><div class="k">${icon('fire', 13)} Forma</div><div class="v"><span class="form">${last.map(r => `<i class="${r}"></i>`).join('') || '<span class="muted small">—</span>'}</span></div></div>
   </div>
+  ${challengeBanner(g)}
+  ${eventCard(g)}
   ${next}
   ${isPlayerMode(g) ? pcCard(S) : careerCard(S)}
   ${cupsCard}
@@ -231,7 +246,8 @@ function offerRow(g, o) {
       <div class="muted tiny">Valor de mercado: ${money(p.value)} · expira em ${weeksLeft(g, o)} semana(s)</div></div>
     <button class="btn-sm btn-good icon-btn" data-act="acceptOffer" data-id="${o.id}" aria-label="Aceitar">✓</button>
     <button class="btn-sm btn-bad icon-btn" data-act="rejectOffer" data-id="${o.id}" aria-label="Recusar">${icon('close', 16)}</button>
-  </div>`;
+  </div>
+  ${o.countered ? '' : `<div class="counter-row"><span class="tiny muted">Contraproposta:</span>${[[1.1, '+10%'], [1.25, '+25%'], [1.4, '+40%']].map(([m, l]) => `<button class="chip" data-act="counterOffer" data-id="${o.id}" data-v="${m}">${l}</button>`).join('')}</div>`}`;
 }
 
 // Propostas de compra recebidas por um jogador (da caixa de entrada)
@@ -411,26 +427,7 @@ export function playerModal(S, id) {
   ${p.trophies && p.trophies.length ? `<h3>Prêmios individuais</h3><div class="list">${p.trophies.slice().reverse().map(t => `<div class="item small" style="min-height:44px">${icon('medal', 18)}<span class="grow">${esc(t)}</span></div>`).join('')}</div>` : ''}
   <p class="tiny muted">${p.fictional ? 'Jogador fictício (gerado pelo jogo).' : p.realValueEUR ? `Valor real de referência (Transfermarkt, jul/2026): € ${(p.realValueEUR / 1e6).toLocaleString('pt-BR')} mi. Atributos estimados a partir dele.` : ''}
   ${p.pos !== 'GOL' ? ' Rende em outras posições: ' + POSITIONS.filter(x => x !== p.pos && x !== 'GOL').map(x => `${x} ${Math.round(overall(p, x))}`).join(' · ') : ''}</p>
-  ${actions}
-  <button class="btn-sm btn-block mt btn-ghost" data-act="editPlayer" data-id="${p.id}">${icon('edit', 15)} Editar dados do jogador</button>`;
-}
-
-// Formulário de edição (banco de dados editável)
-export function editPlayerModal(S, id) {
-  const p = S.game.players[id];
-  const f = (l, k, v) => `<div><label>${l}</label><input id="ed-${k}" type="number" min="1" max="99" value="${v}"></div>`;
-  return `<h2>Editar jogador</h2>
-  <p class="small muted">Corrija nomes e atributos. Muda só este jogo salvo.</p>
-  <label>Nome</label><input id="ed-name" value="${esc(p.name)}" maxlength="40">
-  <div class="grid2">
-    <div><label>Posição</label><select id="ed-pos">${POSITIONS.map(x => `<option ${x === p.pos ? 'selected' : ''}>${x}</option>`).join('')}</select></div>
-    ${f('Idade', 'age', p.age)}
-    ${f('Finalização', 'fin', p.attrs.fin)}${f('Passe', 'pas', p.attrs.pas)}
-    ${f('Defesa', 'def', p.attrs.def)}${f('Força', 'for', p.attrs.for)}
-    ${f('Resistência', 'res', p.attrs.res)}${f('Goleiro', 'gk', p.attrs.gk)}
-    ${f('Potencial', 'potential', p.potential)}
-  </div>
-  <button class="btn-main mt" data-act="savePlayerEdit" data-id="${p.id}">Salvar</button>`;
+  ${actions}`;
 }
 
 // ---------------------------------------------------------------
@@ -560,7 +557,7 @@ export function tableScreen(S) {
       const cls = [s.id === g.userClubId ? 'me' : '', zone, zBot && i >= n - zBot ? 'z4' : ''].join(' ');
       return `<tr class="${cls}"><td>${i + 1}</td>
         <td class="team"><span class="row" style="gap:6px">${badge(c, 'sm')}<span class="ellipsis" style="max-width:120px">${esc(c.name)}</span></span></td>
-        <td><b>${s.pts}</b></td><td>${s.j}</td><td>${s.v}</td><td>${s.gp - s.gc}</td>
+        <td><b>${s.pts}</b>${s.pen ? `<span class="tiny bad" title="Punição"> −${s.pen}</span>` : ""}</td><td>${s.j}</td><td>${s.v}</td><td>${s.gp - s.gc}</td>
         <td><span class="form">${s.form.slice(-3).map(r => `<i class="${r}"></i>`).join('')}</span></td></tr>`;
     }).join('')}
   </table></div>
@@ -792,6 +789,7 @@ export function moreScreen(S) {
       ${it('go', 'globe', 'Seleções e Copa do Mundo', 'Ranking, convocações, Copa, Euro e Copa América', 'data-to="nations"', 'style="color:var(--accent2);background:rgba(46,230,255,.12)"')}
       ${it('go', 'news', 'Notícias', 'Manchetes, entrevistas e mercado da bola', 'data-to="news"')}
       ${it('go', 'star', 'Conquistas', 'Medalhas da sua carreira', 'data-to="achievements"', 'style="color:var(--gold);background:rgba(255,210,90,.12)"')}
+      ${isPlayerMode(g) ? '' : it('go', 'chart', 'Ranking de técnicos', 'Sua posição no mundo e compartilhar', 'data-to="ranking"')}
       ${it('go', 'trophy', 'Histórico e recordes', 'Hall da fama, artilheiros e goleadas', 'data-to="records"')}
       ${isPlayerMode(g) ? '' : it('go', 'coin', 'Finanças', 'Caixa, ingressos e extrato', 'data-to="finance"')}
       ${it('go', 'palette', 'Aparência e som', 'Tema, sons e notificações', 'data-to="settings"')}

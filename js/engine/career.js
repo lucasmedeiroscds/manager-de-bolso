@@ -21,6 +21,7 @@ import { addTx } from './finance.js';
 import { money } from '../util.js';
 import { nationOffer } from './national-coach.js';
 import { rivalsOf } from './derbies.js';
+import { diffOf } from './modes.js';
 
 export const LEVELS = [
   [0, 'Iniciante'], [25, 'Promissor'], [40, 'Experiente'], [55, 'Respeitado'],
@@ -178,6 +179,8 @@ export function afterUserMatch(game, m) {
   if (gf - ga >= 3) { db += 1; df += 3; }            // goleada aplicada
   if (m.knockout && m.winnerIndex() !== me) { db -= 3; df -= 4; } // eliminação
   if (m.derby) { db *= 1.5; df *= 1.8; } // clássico vale mais (e dói mais)
+  const dif = diffOf(game);
+  db *= db > 0 ? dif.gain : dif.pain; df *= df > 0 ? dif.gain : dif.pain;
   c.board = clamp(c.board + db, 0, 100);
   c.fans = clamp(c.fans + df, 0, 100);
   c.stats.games++;

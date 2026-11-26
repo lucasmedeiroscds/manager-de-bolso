@@ -34,6 +34,8 @@ export const LIST = [
   ['double', '✌️', 'Dobradinha', 'Ganhe a liga e uma copa na mesma temporada.', 'coach', g => hist(g).some(h => h.userPos === 1 && h.userCups && h.userCups.length)],
   ['legend', '🗿', 'Ídolo eterno', 'Tenha um jogador eleito lenda do clube.', 'coach', g => Object.values(g.legends || {}).some(l => l.length)],
   ['academy', '🌱', 'Cria da casa', 'Promova um garoto da base.', 'coach', g => !!(g.academy && g.academy.promoted.length)],
+  ['challenge', '🎖️', 'Missão cumprida', 'Vença um desafio.', 'coach', g => !!(g.challenge && g.challenge.result === 'win')],
+  ['top10', '🌍', 'Top 10 do mundo', 'Entre no top 10 do ranking de técnicos.', 'coach', g => !!g.coachRank && Object.entries(g.coachRank).sort((a, b) => b[1] - a[1]).findIndex(x => x[0] === 'me') < 10],
   ['seasons5', '📅', 'Veterano', 'Complete 5 temporadas.', 'coach', g => hist(g).length >= 5],
   // modo jogador
   ['pcDebut', '👟', 'Estreia', 'Entre em campo pela primeira vez.', 'player', g => pcP(g).apps >= 1],
@@ -46,6 +48,9 @@ export const LIST = [
   ['pcOvr85', '🌟', 'Estrela', 'Chegue a força 85.', 'player', g => overall(pcP(g)) >= 85],
   ['pcMove', '✈️', 'Transferência', 'Troque de clube.', 'player', g => g.pc.startClub && pcP(g).clubId !== g.pc.startClub],
   ['pcNation', '🧢', 'Convocado', 'Seja convocado pela seleção.', 'player', g => { const p = pcP(g); return !!p.nat && callUp(g, p.nat).some(x => x.id === p.id); }],
+  ['pcHouse', '🏡', 'Casa própria', 'Compre a sua primeira casa.', 'player', g => !!(g.pc.life && g.pc.life.owned.some(o => ['kitnet', 'apto', 'casa', 'cobertura', 'mansao', 'mansaoCampo'].includes(o.id)))],
+  ['pcMillion', '💰', 'Milionário', 'Tenha patrimônio de R$ 1 milhão.', 'player', g => !!g.pc.life && (g.pc.life.cash + g.pc.life.invest) >= 1e6],
+  ['pcStar', '🌟', 'Celebridade', 'Chegue a 60 de fama.', 'player', g => !!g.pc.life && g.pc.life.fame >= 60],
   ['pcTrophy', '🏅', 'Premiado', 'Ganhe um título ou prêmio.', 'player', g => (pcP(g).trophies || []).length >= 1]
 ];
 

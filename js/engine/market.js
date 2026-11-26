@@ -9,6 +9,7 @@ import { clubPlayers, touchPlayers, setClub } from './tactics.js';
 function move(game, p, clubId) { setClub(game, p, clubId); }
 import { addTx } from './finance.js';
 import { makePlayer } from '../data/generator.js';
+import { diffOf } from './modes.js';
 
 export const MAX_SQUAD = 32;
 export const MIN_SQUAD = 16;
@@ -39,6 +40,7 @@ export function askingPrice(game, p) {
   let v = p.value * (isKeyPlayer(game, p) ? 1.35 : 1.05);
   if (p.contract.years <= 1) v *= 0.75;             // contrato acabando: mais barato
   if (p.listed) v *= 0.9;
+  if (p.clubId !== game.userClubId) v *= diffOf(game).price;
   return Math.round(v / 10000) * 10000;
 }
 
@@ -56,23 +58,51 @@ export function wageAsk(game, p, club) {
 // ---------- Negociação interativa ----------
 // Chance de o clube vendedor e o jogador aceitarem uma proposta.
 // fee: valor da transferência; wage: salário semanal; years: anos de contrato
-export function negotiationChance(game, p, fee, wage, years) {
+export const CLAUSES = { none: ['Sem multa', 1, 0], alta: ['Multa alta (5× o valor)', 0.92, 5], baixa: ['Multa baixa (2× o valor)', 1.12, 2] };
+const msgIn = (game, text) => game.inbox.unshift({ id: newId('m'), type: 'msg', text, season: game.season, round: game.round });
+export function negotiationChance(game, p, fee, wage, years, extra = {}) {
+  const sellOn = extra.sellOn || 0, clause = CLAUSES[extra.clause || 'none'] || CLAUSES.none;
   const user = clubById(game, game.userClubId);
   const from = p.clubId ? clubById(game, p.clubId) : null;
   const ask = askingPrice(game, p), wAsk = wageAsk(game, p, user);
   // Clube: 0% abaixo de 80% do pedido; ~85% pagando o pedido; 100% a partir de ~104%
-  const club = !from ? 1 : Math.max(0, Math.min(1, (fee / ask - 0.8) / 0.235));
+  // % de venda futura deixa o clube vendedor mais flexível (10% vale ~6% a mais)
+  const eff = fee * (1 + sellOn * 0.6);
+  let club = !from ? 1 : Math.max(0, Math.min(1, (eff / ask - 0.8) / 0.235));
+  // Outro clube na disputa: só leva quem cobrir a oferta dele
+  const rb = activeRival(game, p);
+  if (from && rb && fee < rb.fee) club = 0;
   // Jogador: salário em relação ao que pede; anos de contrato; tamanho do clube
   let player = Math.max(0, Math.min(1, (wage / wAsk - 0.78) / 0.26));
   if (p.age >= 30 && years < 2) player *= 0.75;         // veterano quer segurança
   if (p.age <= 23 && years >= 5) player *= 0.9;         // jovem não quer ficar preso
   if (years >= 3 && p.age >= 30) player = Math.min(1, player * 1.12);
   if (from && from.rep - user.rep > 12) player *= Math.max(0.35, 1 - (from.rep - user.rep - 12) / 30);
-  return { club, player, total: club * player, ask, wAsk };
+  player = Math.min(1, player * clause[1]);   // jogador gosta de multa baixa (fica livre para sair)
+  return { club, player, total: club * player, ask, wAsk, rival: rb };
 }
 
 // Envia a proposta. Devolve { status: 'accepted' | 'counter' | 'rejected' | 'error', msg, ... }
-export function negotiate(game, p, fee, wage, years) {
+// Rival na disputa (vale até 1 semana depois da oferta dele)
+export function activeRival(game, p) {
+  const rb = p.rivalBid;
+  return rb && rb.season === game.season && game.round <= rb.round + 1 && p.clubId && p.clubId !== game.userClubId ? rb : null;
+}
+function maybeRival(game, p, user) {
+  if (!p.clubId || p.rivalBid || rnd() > 0.3) return null;
+  const ask = askingPrice(game, p);
+  const ok = c => c.id !== user.id && c.id !== p.clubId && c.budget > ask * 1.2 && c.rep >= user.rep - 8;
+  // de preferência, um rival de clássico
+  const derbyRivals = (game.h2h ? Object.keys(game.h2h) : []).map(id => clubById(game, id)).filter(c => c && ok(c));
+  const pool = derbyRivals.length ? derbyRivals : game.clubs.filter(c => ok(c) && c.leagueId === user.leagueId);
+  if (!pool.length) return null;
+  const c = pick(pool);
+  p.rivalBid = { clubId: c.id, fee: Math.round(ask * (1.05 + rnd() * 0.1) / 10000) * 10000, season: game.season, round: game.round };
+  (game.rivalIds = game.rivalIds || []).push(p.id);
+  return p.rivalBid;
+}
+
+export function negotiate(game, p, fee, wage, years, extra = {}) {
   const user = clubById(game, game.userClubId);
   if (!windowOpen(game) && p.clubId) return { status: 'error', msg: 'A janela de transferências está fechada.' };
   if (clubPlayers(game, user.id).length >= MAX_SQUAD) return { status: 'error', msg: `Elenco cheio (máx. ${MAX_SQUAD}).` };
@@ -81,7 +111,16 @@ export function negotiate(game, p, fee, wage, years) {
   const signing = p.clubId ? 0 : wage * 4;
   const total = (p.clubId ? fee : 0) + signing;
   if (user.budget < total) return { status: 'error', msg: `Dinheiro insuficiente: você precisa de ${money(total)}.` };
-  const ch = negotiationChance(game, p, fee, wage, years);
+  let ch = negotiationChance(game, p, fee, wage, years, extra);
+  if (!ch.rival && !(p.negoTries && p.negoTries.season === game.season && p.negoTries.round === game.round)) {
+    const rb = maybeRival(game, p, user);
+    if (rb && fee < rb.fee) {
+      p.negoTries = { season: game.season, round: game.round, n: 1 };
+      return { status: 'counter', counterFee: rb.fee, counterWage: wage, triesLeft: 2, rival: true,
+        msg: `🚨 O ${clubById(game, rb.clubId).name} também quer ${p.name} e ofereceu ${money(rb.fee)}! Cubra a oferta até a próxima semana ou ele fecha com o rival.` };
+    }
+    if (rb) ch = negotiationChance(game, p, fee, wage, years, extra);
+  }
   p.negoTries = (p.negoTries && p.negoTries.season === game.season && p.negoTries.round === game.round) ? p.negoTries : { season: game.season, round: game.round, n: 0 };
   p.negoTries.n++;
   if (rnd() < ch.total) {
@@ -90,7 +129,10 @@ export function negotiate(game, p, fee, wage, years) {
     if (signing) addTx(game, user.id, `Luvas de ${p.name}`, -signing);
     move(game, p, user.id);
     p.contract = { wage: Math.round(wage / 100) * 100, years };
-    p.listed = false; p.moral = 75; delete p.negoTries; delete p.negoBlock;
+    p.listed = false; p.moral = 75; delete p.negoTries; delete p.negoBlock; delete p.rivalBid;
+    p.sellOn = from && extra.sellOn ? { clubId: from.id, pct: extra.sellOn } : null;
+    const cl = CLAUSES[extra.clause || 'none'] || CLAUSES.none;
+    p.releaseClause = cl[2] ? Math.round(p.value * cl[2] / 100000) * 100000 : null;
     news(game, `${user.name} contrata ${p.name}${from ? ` do ${from.name} por ${money(fee)}` : ' (estava sem clube)'}.`);
     return { status: 'accepted', msg: `Negócio fechado! ${p.name} é o novo reforço.` };
   }
@@ -203,6 +245,15 @@ export function acceptOffer(game, offerId) {
   if (clubPlayers(game, game.userClubId).length <= MIN_SQUAD) return { ok: false, msg: `Elenco mínimo é ${MIN_SQUAD}.` };
   addTx(game, game.userClubId, `Venda de ${p.name}`, o.fee);
   addTx(game, buyer.id, `Compra de ${p.name}`, -o.fee);
+  let extraMsg = '';
+  if (p.sellOn && clubById(game, p.sellOn.clubId)) {
+    const cut = Math.round(o.fee * p.sellOn.pct / 10000) * 10000;
+    const old = clubById(game, p.sellOn.clubId);
+    addTx(game, game.userClubId, `${Math.round(p.sellOn.pct * 100)}% da venda de ${p.name} ao ${old.name}`, -cut);
+    addTx(game, old.id, `% da venda de ${p.name}`, cut);
+    extraMsg = ` (${money(cut)} foram para o ${old.name}, pela % de venda futura)`;
+  }
+  p.sellOn = null; p.releaseClause = null;
   move(game, p, buyer.id); p.listed = false;
   p.contract = { wage: wageAsk(game, p, buyer), years: 3 };
   // Tira da escalação
@@ -210,7 +261,20 @@ export function acceptOffer(game, offerId) {
   user.lineup = user.lineup.map(id => id === p.id ? null : id);
   user.bench = user.bench.filter(id => id !== p.id);
   news(game, `${buyer.name} compra ${p.name} do ${user.name} por ${money(o.fee)}.`);
-  return { ok: true, msg: `${p.name} vendido ao ${buyer.name} por ${money(o.fee)}.` };
+  return { ok: true, msg: `${p.name} vendido ao ${buyer.name} por ${money(o.fee)}${extraMsg}.` };
+}
+
+// Contraproposta a uma oferta recebida: pede mais dinheiro (uma vez só)
+export function counterOffer(game, offerId, mult) {
+  const o = game.inbox.find(m => m.id === offerId && m.type === 'offer');
+  if (!o || o.countered) return { ok: false, msg: 'Você já fez uma contraproposta.' };
+  const p = game.players[o.playerId], buyer = clubById(game, o.clubId);
+  const ask = Math.round(o.fee * mult / 10000) * 10000;
+  o.countered = true;
+  const ch = mult <= 1.1 ? 0.75 : mult <= 1.25 ? 0.45 : 0.18;
+  if (rnd() < ch && buyer.budget > ask) { o.fee = ask; return { ok: true, msg: `🤝 O ${buyer.name} aceitou pagar ${money(ask)} por ${p.name}! Agora é só aceitar a proposta.` }; }
+  if (rnd() < 0.5) { game.inbox = game.inbox.filter(m => m.id !== offerId); return { ok: false, gone: true, msg: `😤 O ${buyer.name} achou caro e desistiu de ${p.name}.` }; }
+  return { ok: false, msg: `O ${buyer.name} não subiu a oferta. A proposta original (${money(o.fee)}) continua de pé.` };
 }
 
 export function rejectOffer(game, offerId) {
@@ -234,6 +298,34 @@ export function aiMarket(game) {
     const fee = Math.round(p.value * (p.listed ? 0.7 + rnd() * 0.4 : 1.1 + rnd() * 0.35) / 10000) * 10000;
     if (game.inbox.some(m => m.type === 'offer' && m.playerId === p.id)) continue;
     game.inbox.unshift({ id: newId('o'), type: 'offer', playerId: p.id, clubId: b.id, fee, expires: game.round + 2 });
+  }
+
+  // 1b) Rival que estava na disputa fecha o negócio
+  for (const id of (game.rivalIds || []).slice()) {
+    const p = game.players[id], rb = p && p.rivalBid;
+    if (!rb) { game.rivalIds = game.rivalIds.filter(x => x !== id); continue; }
+    if (rb.season !== game.season || !p.clubId || p.clubId === game.userClubId) { delete p.rivalBid; continue; }
+    if (game.round <= rb.round + 1) continue;
+    const buyer = clubById(game, rb.clubId), seller = clubById(game, p.clubId);
+    delete p.rivalBid;
+    if (!buyer || buyer.budget < rb.fee || clubPlayers(game, seller.id).length <= 18) continue;
+    addTx(game, buyer.id, `Compra de ${p.name}`, -rb.fee); addTx(game, seller.id, `Venda de ${p.name}`, rb.fee);
+    move(game, p, buyer.id); p.contract = { wage: wageAsk(game, p, buyer), years: 3 };
+    news(game, `${buyer.name} vence a disputa e contrata ${p.name} por ${money(rb.fee)}.`);
+    msgIn(game, `😠 Você demorou: o ${buyer.name} contratou ${p.name} por ${money(rb.fee)}.`);
+  }
+  // 1c) Multa rescisória: clube grande paga a multa e leva o jogador
+  if (game.mode !== 'player') for (const p of clubPlayers(game, game.userClubId)) {
+    if (!p.releaseClause || p.loan || rnd() > 0.02) continue;
+    const user = clubById(game, game.userClubId);
+    const buyers = game.clubs.filter(c => c.id !== user.id && c.budget > p.releaseClause * 1.3 && c.rep >= user.rep);
+    if (!buyers.length || clubPlayers(game, user.id).length <= MIN_SQUAD) continue;
+    const b = pick(buyers), fee = p.releaseClause;
+    addTx(game, user.id, `Multa rescisória de ${p.name}`, fee); addTx(game, b.id, `Multa de ${p.name}`, -fee);
+    user.lineup = user.lineup.map(id => id === p.id ? null : id); user.bench = user.bench.filter(id => id !== p.id);
+    move(game, p, b.id); p.contract = { wage: wageAsk(game, p, b), years: 4 }; p.releaseClause = null; p.sellOn = null;
+    msgIn(game, `💥 O ${b.name} pagou a multa rescisória de ${p.name} (${money(fee)}) e levou o jogador!`);
+    news(game, `${b.name} paga a multa e tira ${p.name} do ${user.name}.`);
   }
 
   // 2) Clubes da IA com elenco curto contratam agentes livres

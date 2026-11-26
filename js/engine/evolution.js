@@ -14,6 +14,15 @@ export const TRAIN_FOCUS = {
   'Defensivo': ['def', 'gk'],
   'Finalização': ['fin']
 };
+// Modo jogador: treino da semana (escolhido na tela Carreira)
+// grow: chance de evolução natural · xp: experiência · fit: físico · inj: risco de lesão · trust: confiança
+export const PC_PLANS = {
+  descanso: { name: 'Descanso', emoji: '🛌', grow: 0.15, xp: 0, fit: 12, inj: 0, trust: -0.5, desc: 'Recupera o físico e a moral. Quase não evolui.' },
+  normal:   { name: 'Normal', emoji: '⚽', grow: 0.55, xp: 10, fit: 0, inj: 0.002, trust: 0, desc: 'Treino padrão com o grupo.' },
+  intenso:  { name: 'Intenso', emoji: '🔥', grow: 0.85, xp: 18, fit: -10, inj: 0.025, trust: 0.5, desc: 'Evolui mais, mas cansa e pode machucar.' },
+  tatico:   { name: 'Tático', emoji: '📋', grow: 0.35, xp: 6, fit: 0, inj: 0.002, trust: 1.5, desc: 'Vídeo e posicionamento: o técnico gosta (confiança +).' },
+  focado:   { name: 'Específico', emoji: '🎯', grow: 0.55, xp: 10, fit: -4, inj: 0.008, trust: 0, desc: 'Treino extra no atributo escolhido.' }
+};
 export const TRAIN_INTENSITY = {
   'Leve':   { growth: 0.7, recover: 6, injury: 0.000 },
   'Normal': { growth: 1.0, recover: 0, injury: 0.002 },
@@ -72,8 +81,10 @@ export function weeklyEvolution(game) {
         // Quem joga evolui mais
         const playing = p.apps > 0 ? 1.15 : 0.9;
         const sg = sf ? sf.growth * (p.pos === 'GOL' ? sf.gkGrowth : 1) : 1;
-        if (rnd() < base * it.growth * playing * sg) {
-          const k = attrToTrain(p, tr.focus);
+        // jogador do usuário: depende do treino da semana (e cresce menos sozinho)
+        const plan = p.isPC && game.pc ? PC_PLANS[game.pc.plan || 'normal'] || PC_PLANS.normal : null;
+        if (rnd() < base * (plan ? plan.grow : it.growth * sg) * playing) {
+          const k = plan && game.pc.plan === 'focado' && game.pc.focus && p.attrs[game.pc.focus] != null ? game.pc.focus : attrToTrain(p, tr.focus);
           p.attrs[k] = Math.min(99, p.attrs[k] + 1);
           if (overall(p) > p.potential) p.attrs[k]--; // não passa do potencial
         }

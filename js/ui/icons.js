@@ -14,6 +14,7 @@ const P = {
   fast: '<path d="M4 6v12l7.5-6zM12.5 6v12L20 12z" fill="currentColor" stroke="none"/>',
   skip: '<path d="M5 6v12l8-6zM17 6v12" /><path d="M5 6v12l8-6z" fill="currentColor" stroke="none"/>',
   target: '<circle cx="12" cy="12" r="8"/><circle cx="12" cy="12" r="4"/><circle cx="12" cy="12" r="1" fill="currentColor"/>',
+  share: '<circle cx="18" cy="5" r="2.5"/><circle cx="6" cy="12" r="2.5"/><circle cx="18" cy="19" r="2.5"/><path d="m8.2 10.8 7.6-4.4M8.2 13.2l7.6 4.4"/>',
   coin: '<circle cx="12" cy="12" r="8"/><path d="M14.5 9.2c-.5-.8-1.4-1.2-2.5-1.2-1.6 0-2.6.8-2.6 1.9 0 2.6 5.3 1.3 5.3 4 0 1.2-1.1 2.1-2.7 2.1-1.2 0-2.2-.5-2.7-1.3M12 6.5V8M12 16v1.5"/>',
   chart: '<path d="M4 19.5h16"/><rect x="5.5" y="11" width="3" height="6" rx=".6"/><rect x="10.5" y="7" width="3" height="10" rx=".6"/><rect x="15.5" y="4" width="3" height="13" rx=".6"/>',
   list: '<path d="M8 7h12M8 12h12M8 17h12"/><circle cx="4.5" cy="7" r="1" fill="currentColor"/><circle cx="4.5" cy="12" r="1" fill="currentColor"/><circle cx="4.5" cy="17" r="1" fill="currentColor"/>',

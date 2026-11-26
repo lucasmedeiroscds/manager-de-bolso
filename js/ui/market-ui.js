@@ -3,7 +3,7 @@
 // =============================================================
 import { esc, money } from '../util.js';
 import { overall } from '../engine/ratings.js';
-import { negotiationChance, askingPrice, wageAsk, clubById, windowOpen } from '../engine/market.js';
+import { negotiationChance, askingPrice, wageAsk, clubById, windowOpen, CLAUSES } from '../engine/market.js';
 import { REGIONS, SCOUT_COST } from '../engine/scouting.js';
 import { badge, posTag, ovrTag, radar } from './ui.js';
 import { icon } from './icons.js';
@@ -18,7 +18,7 @@ export function negotiationModal(S, id, st) {
   const from = p.clubId ? clubById(g, p.clubId) : null;
   const ask = askingPrice(g, p), wAsk = wageAsk(g, p, user);
   st = st || { fee: ask, wage: wAsk, years: p.age >= 30 ? 2 : 3 };
-  const ch = negotiationChance(g, p, st.fee, st.wage, st.years);
+  const ch = negotiationChance(g, p, st.fee, st.wage, st.years, st);
   const [lbl, col] = chanceLabel(ch.total);
   const total = (from ? st.fee : 0) + (from ? 0 : st.wage * 4);
   return `<div class="row" style="gap:12px;margin:4px 48px 10px 0">${posTag(p.pos)}<div class="grow"><h2 style="margin:0">${esc(p.name)}</h2>
@@ -32,7 +32,12 @@ export function negotiationModal(S, id, st) {
         <b class="num" id="ng-wage-v" style="min-width:86px;text-align:right">${money(st.wage)}</b></div>
       <label>Contrato</label>
       <div class="chips">${[1, 2, 3, 4, 5].map(y => `<button class="chip ${st.years === y ? 'on' : ''}" data-act="negoYears" data-id="${id}" data-v="${y}">${y} ano${y > 1 ? 's' : ''}</button>`).join('')}</div>
+      ${from ? `<label>% de venda futura para o ${esc(from.name)} <span class="tiny muted">(ajuda a baixar o preço)</span></label>
+      <div class="chips">${[0, 0.1, 0.2].map(v => `<button class="chip ${(st.sellOn || 0) === v ? 'on' : ''}" data-act="negoOpt" data-k="sellOn" data-id="${id}" data-v="${v}">${v ? Math.round(v * 100) + '%' : 'Nenhuma'}</button>`).join('')}</div>` : ''}
+      <label>Multa rescisória <span class="tiny muted">(multa baixa agrada o jogador, mas outro clube pode pagar e levá-lo)</span></label>
+      <div class="chips">${Object.entries(CLAUSES).map(([k, c]) => `<button class="chip ${(st.clause || 'none') === k ? 'on' : ''}" data-act="negoOpt" data-k="clause" data-id="${id}" data-v="${k}">${c[0]}</button>`).join('')}</div>
     </div>
+    ${ch.rival ? `<div class="card small" style="border-color:var(--bad)">🚨 <b>${esc(clubById(g, ch.rival.clubId).name)}</b> está na disputa com oferta de <b>${money(ch.rival.fee)}</b>. Cubra até a próxima semana!</div>` : ''}
     <div class="card" id="ng-chance">
       <div class="row between"><b>Chance de aceitarem</b><b id="ng-lbl" style="color:${col}">${lbl} · ${Math.round(ch.total * 100)}%</b></div>
       <div class="bar" style="height:10px;margin:8px 0"><i id="ng-bar" style="width:${Math.round(ch.total * 100)}%;background:${col}"></i></div>
@@ -49,7 +54,7 @@ export function negotiationModal(S, id, st) {
 // Atualiza a chance ao mexer nos controles (sem redesenhar a janela)
 export function updateNegotiation(S, id, st) {
   const g = S.game, p = g.players[id];
-  const ch = negotiationChance(g, p, st.fee, st.wage, st.years);
+  const ch = negotiationChance(g, p, st.fee, st.wage, st.years, st);
   const [lbl, col] = chanceLabel(ch.total);
   const $ = x => document.getElementById(x);
   if ($('ng-fee-v')) $('ng-fee-v').textContent = money(st.fee);

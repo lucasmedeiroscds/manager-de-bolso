@@ -25,6 +25,9 @@ import { derbyName, recordH2H } from './derbies.js';
 import { weeklyAcademy, seasonAcademy } from './academy.js';
 import { weeklyStaff } from './staff.js';
 import { checkLegends } from './legends.js';
+import { fansAfterMatch } from './fans.js';
+import { updateRanking } from './ranking.js';
+import { rollEvents, applyFix, afterFixMatch, weeklyEvents } from './events.js';
 import { isPlayerMode, pcLineup, afterPcMatch, weeklyPc } from './player-career.js';
 
 export const SAVE_VERSION = 2;
@@ -130,6 +133,8 @@ export function standings(game, leagueId = userLeague(game).id) {
       else { h.e++; a.e++; h.pts++; a.pts++; h.form.push('E'); a.form.push('E'); }
     }
   }
+  // pontos tirados como punição (esquema de apostas)
+  if (l.penalties && l.penalties.season === game.season) for (const [id, n] of Object.entries(l.penalties.map)) if (t[id]) { t[id].pts -= n; t[id].pen = n; }
   return Object.values(t).sort((x, y) =>
     y.pts - x.pts || y.v - x.v || (y.gp - y.gc) - (x.gp - x.gc) || y.gp - x.gp);
 }
@@ -197,6 +202,7 @@ export function prepareRound(game) {
   }
   const suspendedNow = Object.values(game.players).filter(p => p.suspended > 0).map(p => p.id);
   const userMatch = matches.find(m => m.teams.some(t => t.club.id === game.userClubId));
+  if (userMatch) applyFix(game, userMatch);
   return { phase: 'league', matches, fixtures, userMatch, warnings, suspendedNow };
 }
 
@@ -230,6 +236,7 @@ function prepareCupPhase(game) {
   }
   const suspendedNow = Object.values(game.players).filter(p => p.suspended > 0 && playing.has(p.clubId)).map(p => p.id);
   const userMatch = matches.find(m => m.teams.some(t => t.club.id === game.userClubId));
+  if (userMatch) applyFix(game, userMatch);
   return { phase: 'cup', matches, fixtures, userMatch, warnings, suspendedNow };
 }
 
@@ -244,6 +251,7 @@ function finishCupPhase(game, prep) {
     homeGames.push({ home: m.teams[0].club.id, away: m.teams[1].club.id, att: m.attendance, label: m.cupName });
   });
   for (const id of prep.suspendedNow) { const p = game.players[id]; if (p) p.suspended = Math.max(0, p.suspended - 1); }
+  if (prep.userMatch) afterFixMatch(game, prep.userMatch, prep.fixtures[prep.matches.indexOf(prep.userMatch)]).forEach(msg => inbox(game, msg));
   // Renda das copas fica com o mandante
   for (const g of homeGames) {
     const c = clubById(game, g.home);
@@ -256,7 +264,7 @@ function finishCupPhase(game, prep) {
   processCups(game).forEach(msg => inbox(game, msg));
   if (prep.userMatch) afterUserMatch(game, prep.userMatch).forEach(msg => inbox(game, msg));
   if (prep.userMatch && isPlayerMode(game)) afterPcMatch(game, prep.userMatch).forEach(msg => inbox(game, msg));
-  else if (prep.userMatch) { afterMatchMorale(game, prep.userMatch).forEach(msg => inbox(game, msg)); afterMatchClub(game, prep.userMatch); }
+  else if (prep.userMatch) { afterMatchMorale(game, prep.userMatch).forEach(msg => inbox(game, msg)); afterMatchClub(game, prep.userMatch); fansAfterMatch(game, prep.userMatch).forEach(m => inbox(game, m)); }
   if (prep.userMatch) { recordMatch(game, prep.userMatch); recordH2H(game, prep.userMatch); }
   game.cupWeekDone = game.round;
   return { phase: 'cup', seasonEnd: null };
@@ -275,13 +283,15 @@ export function finishRound(game, prep) {
   });
   for (const id of prep.suspendedNow) { const p = game.players[id]; if (p) p.suspended = Math.max(0, p.suspended - 1); }
 
+  if (prep.userMatch) afterFixMatch(game, prep.userMatch, null).forEach(m => inbox(game, m));
   weeklyFinances(game, homeGames);
+  weeklyEvents(game).forEach(m => inbox(game, m));
   weeklyEvolution(game).forEach(m => inbox(game, m));
   refreshValues(game);
   // Carreira: reação da diretoria/torcida ao jogo e avaliação semanal
   if (prep.userMatch) afterUserMatch(game, prep.userMatch).forEach(m => inbox(game, m));
   if (prep.userMatch && isPlayerMode(game)) afterPcMatch(game, prep.userMatch).forEach(m => inbox(game, m));
-  else if (prep.userMatch) { afterMatchMorale(game, prep.userMatch).forEach(m => inbox(game, m)); afterMatchClub(game, prep.userMatch); }
+  else if (prep.userMatch) { afterMatchMorale(game, prep.userMatch).forEach(m => inbox(game, m)); afterMatchClub(game, prep.userMatch); fansAfterMatch(game, prep.userMatch).forEach(m => inbox(game, m)); }
   if (prep.userMatch) { recordMatch(game, prep.userMatch); recordH2H(game, prep.userMatch); }
   if (isPlayerMode(game)) weeklyPc(game).forEach(m => inbox(game, m));
   else { weeklyStadium(game, userClub(game)).forEach(m => inbox(game, m)); weeklyStaff(game); weeklyAcademy(game); }
@@ -291,6 +301,7 @@ export function finishRound(game, prep) {
   aiMarket(game);
   weeklyCareer(game).forEach(m => inbox(game, m));
   weeklyScouting(game).forEach(m => inbox(game, m));
+  { const nm = nextUserMatch(game); rollEvents(game, nm && { kind: nm.kind, name: nm.name, stage: nm.stage, knockout: nm.kind === 'cup' && !/grupo/i.test(nm.stage || '') }); }
 
   const uc = userClub(game);
   if (uc.budget < 0 && !isPlayerMode(game)) inbox(game, `⚠️ O caixa está negativo (${money(uc.budget)}). Venda jogadores ou reduza a folha.`);
@@ -397,6 +408,7 @@ export function endSeason(game) {
     if (no) inbox(game, `🧢 CONVITE: a seleção ${no.nat} (${no.rank}ª do ranking) quer você como técnico! Veja em Carreira.`);
   }
 
+  updateRanking(game);
   const msgs = [...seasonContracts(game), ...seasonAging(game), ...(isPlayerMode(game) ? [] : seasonAcademy(game))];
   msgs.forEach(m => inbox(game, m));
   aiFillSquads(game);

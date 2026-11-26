@@ -798,3 +798,10 @@ div.press-ans { border: 1px solid var(--line); } div.press-ans.on { border-color
 .acad-lv i { flex: 1; height: 8px; border-radius: 4px; background: rgba(255,255,255,.1); }
 .acad-lv i.on { background: linear-gradient(90deg, var(--accent), var(--gold)); }
 .legend { border-color: var(--gold) !important; }
+.counter-row { display: flex; gap: 6px; align-items: center; padding: 0 12px 10px; margin-top: -4px; flex-wrap: wrap; }
+.counter-row .chip { padding: 4px 10px; min-height: 30px; }
+.challenge-line { display: flex; gap: 10px; align-items: center; padding: 10px 12px; margin: 0 0 12px; border-radius: 14px; border: 1px solid rgba(255,210,90,.45); background: linear-gradient(90deg, rgba(255,210,90,.12), rgba(255,210,90,.03)); }
+.rank-me { border-color: var(--gold) !important; background: rgba(255,210,90,.08) !important; }
+
+.event-card { border-color: rgba(255,120,80,.55) !important; background: linear-gradient(180deg, rgba(255,120,80,.10), transparent) !important; }
+.event-card .talk-opt { margin-top: 6px; }

@@ -5,9 +5,11 @@ import { esc, money } from '../util.js';
 import { icon } from './icons.js';
 import { badge, bar, ring } from './ui.js';
 import { overall } from '../engine/ratings.js';
-import { pcPlayer, starterClubs } from '../engine/player-career.js';
+import { pcPlayer, starterClubs, xpNeed, attrCost } from '../engine/player-career.js';
+import { PC_PLANS } from '../engine/evolution.js';
 import { callUp } from '../engine/nations.js';
 import { windowOpen } from '../engine/market.js';
+import { life } from '../engine/life.js';
 
 const POS = [['GOL', 'Goleiro'], ['ZAG', 'Zagueiro'], ['LAT', 'Lateral'], ['VOL', 'Volante'], ['MEI', 'Meia'], ['ATA', 'Atacante']];
 const ATTRS = [['fin', 'Finalização'], ['pas', 'Passe'], ['def', 'Defesa'], ['for', 'Força'], ['res', 'Resistência'], ['gk', 'Goleiro']];
@@ -45,6 +47,7 @@ export function pcCard(S) {
       <div><span class="tiny muted">CONFIANÇA DO TÉCNICO</span><div class="bar"><i style="width:${pc.trust}%;background:${pc.trust >= 65 ? 'var(--good)' : pc.trust >= 35 ? 'var(--warn)' : 'var(--bad)'}"></i></div></div>
       <div><span class="tiny muted">EXPERIÊNCIA</span><div class="bar"><i style="width:${pc.xp}%"></i></div></div>
     </div>
+    <div class="tag" style="margin-top:10px;display:inline-block" data-act="go" data-to="life">💰 ${money(life(g).cash)} · ⭐ ${Math.round(life(g).fame)}</div>
     ${pc.pts ? `<div class="tag good" style="margin-top:10px;display:inline-block">🎯 ${pc.pts} ponto(s) de treino</div>` : ''}
     ${pc.offers.length ? `<div class="tag warn" style="margin-top:10px;display:inline-block">📨 ${pc.offers.length} proposta(s)</div>` : ''}
   </div>`;
@@ -61,6 +64,7 @@ export function pcareerScreen(S) {
   const called = squad.some(x => x.id === p.id);
   const rank = squad.length ? Object.values(g.players).filter(x => x.nat === p.nat && x.pos === p.pos && x.clubId).sort((a, b) => overall(b) - overall(a)).findIndex(x => x.id === p.id) + 1 : 0;
   const attrs = ATTRS.filter(([k]) => k !== 'gk' || p.pos === 'GOL');
+  const plan = PC_PLANS[pc.plan || 'normal'] || PC_PLANS.normal, need = xpNeed(p);
   return `<h1>Carreira</h1>
   <div class="card hl">
     <div class="row" style="gap:12px">${badge(club, 'lg')}<div class="grow"><h2 style="margin:0">${esc(p.name)}</h2>
@@ -81,9 +85,15 @@ export function pcareerScreen(S) {
 
   <div class="section-title"><h3>${icon('bolt', 15)} Treino</h3><span class="tag ${pc.pts ? 'good' : ''}">${pc.pts} ponto(s)</span></div>
   <div class="card">
-    <div class="attr"><span class="small">Experiência</span>${bar(pc.xp, 100)}<b class="right">${pc.xp}/100</b></div>
-    ${attrs.map(([k, l]) => `<div class="pc-train"><span class="small">${l}</span>${bar(p.attrs[k], 99)}<b>${p.attrs[k]}</b><button class="btn-sm" data-act="pcTrain" data-v="${k}" ${pc.pts ? '' : 'disabled'}>+1</button></div>`).join('')}
-    <p class="tiny muted" style="margin-bottom:0">Cada jogo dá experiência (mais com nota alta, gols e assistências). A cada 100, 1 ponto de treino. O teto é o seu potencial (${p.potential}).</p>
+    <div class="tiny muted">TREINO DA SEMANA</div>
+    <div class="chips mt">${Object.entries(PC_PLANS).map(([k, t]) => `<button class="chip ${(pc.plan || 'normal') === k ? 'on' : ''}" data-act="pcPlan" data-v="${k}">${t.emoji} ${t.name}</button>`).join('')}</div>
+    <p class="tiny muted">${esc(plan.desc)}${plan.xp ? ` · +${plan.xp} XP por semana` : ''}${plan.fit ? ` · físico ${plan.fit > 0 ? '+' : ''}${plan.fit}` : ''}${plan.inj >= 0.02 ? ' · risco de lesão' : ''}</p>
+    ${(pc.plan === 'focado') ? `<div class="chips">${attrs.map(([k, l]) => `<button class="chip ${pc.focus === k ? 'on' : ''}" data-act="pcFocus" data-v="${k}">${l}</button>`).join('')}</div>` : ''}
+  </div>
+  <div class="card">
+    <div class="attr"><span class="small">Experiência</span>${bar(pc.xp, need)}<b class="right">${pc.xp}/${need}</b></div>
+    ${attrs.map(([k, l]) => { const c = attrCost(p.attrs[k]); return `<div class="pc-train"><span class="small">${l}</span>${bar(p.attrs[k], 99)}<b>${p.attrs[k]}</b><button class="btn-sm" data-act="pcTrain" data-v="${k}" ${pc.pts >= c ? '' : 'disabled'}>+1${c > 1 ? ` <span class="tiny">(${c} pts)</span>` : ''}</button></div>`; }).join('')}
+    <p class="tiny muted" style="margin-bottom:0">Jogos e treinos dão experiência. Quanto melhor você fica, mais experiência precisa para cada ponto (agora: ${need}). Atributo acima de 72 custa 2 pontos; acima de 85, 3. O teto é o seu potencial (${p.potential}).</p>
   </div>
 
   <div class="section-title"><h3>${icon('news', 15)} Propostas</h3>${windowOpen(g) ? '<span class="tag good">janela aberta</span>' : '<span class="tag">janela fechada</span>'}</div>

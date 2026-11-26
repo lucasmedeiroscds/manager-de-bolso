@@ -23,17 +23,24 @@ import { careerScreen } from './ui/career-screen.js';
 import { recordsScreen } from './ui/records-screen.js';
 import { newPlayerScreen, pcareerScreen, pcMomentModal } from './ui/player-career-screen.js';
 import * as PC from './engine/player-career.js';
-import { matchHeadline, interview, answerInterview, addPress } from './engine/press.js';
+import { matchHeadline, addPress } from './engine/press.js';
+import { interview, answerInterview } from './engine/interviews.js';
 import { newsScreen } from './ui/news-screen.js';
 import { achievementsScreen } from './ui/achievements-screen.js';
 import { clubdevScreen } from './ui/clubdev-screen.js';
 import * as ACAD from './engine/academy.js';
 import { setStaff } from './engine/staff.js';
+import { challengesScreen, rankingScreen } from './ui/modes-screen.js';
+import { DIFFS, applyDifficulty, applyChallenge, challengeClub, checkChallenge, failChallengeIfFired } from './engine/modes.js';
+import { shareCareer } from './ui/share.js';
+import { lifeScreen } from './ui/life-screen.js';
+import { answerEvent } from './engine/events.js';
+import * as LIFE from './engine/life.js';
 import * as Notif from './ui/notify.js';
 import { checkAchievements } from './engine/achievements.js';
 import { nationsScreen, squadModal } from './ui/nations-screen.js';
 import { negotiationModal, updateNegotiation, compareModal } from './ui/market-ui.js';
-import { negotiate, askingPrice, wageAsk } from './engine/market.js';
+import { negotiate, askingPrice, wageAsk, counterOffer, windowOpen } from './engine/market.js';
 import { startScouting, stopScouting } from './engine/scouting.js';
 
 import * as Sound from './ui/sound.js';
@@ -86,11 +93,11 @@ const SCREENS = {
   start: SC.startScreen, chooseClub: SC.chooseClubScreen, hub: SC.hubScreen,
   squad: SC.squadScreen, tactics: SC.tacticsScreen, table: SC.tableScreen,
   market: SC.marketScreen, finance: SC.financeScreen, more: SC.moreScreen,
-  match: matchScreen, roundSummary: roundSummaryScreen, awards: awardsScreen, records: recordsScreen, newPlayer: newPlayerScreen, news: newsScreen, achievements: achievementsScreen, clubdev: clubdevScreen, pcareer: pcareerScreen, career: careerScreen, nations: nationsScreen, settings: settingsScreen
+  match: matchScreen, roundSummary: roundSummaryScreen, awards: awardsScreen, records: recordsScreen, newPlayer: newPlayerScreen, news: newsScreen, achievements: achievementsScreen, challenges: challengesScreen, life: lifeScreen, ranking: rankingScreen, clubdev: clubdevScreen, pcareer: pcareerScreen, career: careerScreen, nations: nationsScreen, settings: settingsScreen
 };
 
 // Pergunta o nome do técnico ao começar um jogo novo (devolve null se cancelar)
-function askCoachName(club) {
+function askCoachName(club, fixedDiff = null) {
   let last = '';
   try { last = localStorage.getItem('brasfoot_coach_name') || ''; } catch { /* */ }
   return new Promise(resolve => {
@@ -99,11 +106,20 @@ function askCoachName(club) {
       <h2>Sua carreira começa no ${club.name.replace(/</g, '&lt;')}</h2>
       <p class="small muted">Como você quer ser chamado?</p>
       <input id="coach-name" class="name-input" maxlength="30" placeholder="Seu nome de técnico" value="${last.replace(/"/g, '&quot;')}">
+      ${fixedDiff ? '' : `<p class="small muted mt" style="margin-bottom:6px">Dificuldade</p>
+      <div class="chips" id="diff-chips" style="justify-content:center">${Object.entries(DIFFS).map(([k, d]) => `<button class="chip ${k === 'normal' ? 'on' : ''}" data-diff="${k}">${d.name}</button>`).join('')}</div>
+      <p class="tiny muted" id="diff-desc">${DIFFS.normal.desc}</p>`}
       <p class="tiny warn mt">O salvamento automático atual será substituído.</p>
       <div class="btn-row mt"><button id="cn-no">Cancelar</button><button id="cn-yes" class="btn-good">Começar</button></div></div>`);
     const input = document.getElementById('coach-name');
     setTimeout(() => input.focus(), 350);
-    const ok = () => { const v = input.value.trim() || 'Técnico'; UI.closeModal(); resolve(v); };
+    let diff = fixedDiff || 'normal';
+    document.querySelectorAll('#diff-chips [data-diff]').forEach(b => b.onclick = () => {
+      diff = b.dataset.diff;
+      document.querySelectorAll('#diff-chips [data-diff]').forEach(x => x.classList.toggle('on', x === b));
+      document.getElementById('diff-desc').textContent = DIFFS[diff].desc;
+    });
+    const ok = () => { const v = input.value.trim() || 'Técnico'; UI.closeModal(); resolve({ name: v, diff }); };
     document.getElementById('cn-yes').onclick = ok;
     input.onkeydown = e => { if (e.key === 'Enter') ok(); };
     document.getElementById('cn-no').onclick = () => { UI.closeModal(); resolve(null); };
@@ -114,10 +130,10 @@ const NAV = [
   ['table', 'trophy', 'Tabela'], ['market', 'market', 'Mercado'], ['more', 'menu', 'Mais']
 ];
 const NAV_PC = [
-  ['hub', 'home', 'Início'], ['pcareer', 'whistle', 'Carreira'], ['squad', 'squad', 'Elenco'],
+  ['hub', 'home', 'Início'], ['pcareer', 'whistle', 'Carreira'], ['life', 'coin', 'Vida'], ['squad', 'squad', 'Elenco'],
   ['table', 'trophy', 'Tabela'], ['more', 'menu', 'Mais']
 ];
-const NO_NAV = ['start', 'chooseClub', 'newPlayer', 'match', 'roundSummary'];
+const NO_NAV = ['start', 'chooseClub', 'challenges', 'newPlayer', 'match', 'roundSummary'];
 
 let lastRendered = '';
 function render(keepScroll = false) {
@@ -316,6 +332,70 @@ function playRound() {
   UI.openModal(talkModal(S, 'pre'));
 }
 
+// Desafio: confere a meta no fim da temporada (ou se foi demitido)
+function challengeEnd(summary) {
+  const msg = checkChallenge(S.game, summary) || failChallengeIfFired(S.game);
+  if (!msg) return;
+  S.game.inbox.unshift({ id: 'ch' + Date.now(), type: 'msg', text: msg, season: S.game.season, round: S.game.round });
+  if (S.game.challenge.result === 'win') Sound.success();
+  setTimeout(() => UI.toast(msg, 6000), 900);
+}
+
+// Simulação rápida: joga semana após semana (o técnico auxiliar comanda)
+// e para quando acontece algo que precisa de você.
+function quickSim() {
+  const g = S.game;
+  // só para por proposta que importa: por um titular ou bem acima do valor
+  const bigOffer = m => {
+    const p = g.players[m.playerId], uc = userClub(g);
+    return p && (m.fee >= p.value * 1.4 || (uc.lineup.includes(p.id) && m.fee >= p.value * 1.3));
+  };
+  const r0 = g.round;
+  const snap = () => ({
+    offers: g.inbox.filter(m => m.type === 'offer' && bigOffer(m)).length,
+    jobs: g.coach ? g.coach.offers.length : 0,
+    ult: !!(g.coach && g.coach.ultimatum),
+    nat: !!(g.coach && g.coach.natOffer),
+    pcOffers: g.pc ? g.pc.offers.length : 0,
+    win: windowOpen(g)
+  });
+  let weeks = 0, reason = '', sim = 0;
+  for (; weeks < 60; weeks++) {
+    if (g.pendingEvent) { reason = 'um evento precisa da sua decisão'; break; }
+    const nm = nextUserMatch(g);
+    if (nm && nm.kind === 'cup' && /Final|Semifinal/.test(nm.stage)) { reason = `jogo decisivo: ${nm.name} · ${nm.stage}`; break; }
+    const before = snap();
+    const prep = prepareRound(g);
+    g.quickSim = true; sim++;
+    let out;
+    try { out = finishRound(g, prep); } finally { g.quickSim = false; }
+    announceAch();
+    const fired = failChallengeIfFired(g);
+    if (fired) { g.inbox.unshift({ id: 'ch' + Date.now(), type: 'msg', text: fired, season: g.season, round: g.round }); }
+    if (out.seasonEnd) {
+      challengeEnd(out.seasonEnd);
+      S.prep = null; autosave();
+      S.lastRound = { roundIndex: g.round - 1, fixtures: [], seasonEnd: out.seasonEnd };
+      go('roundSummary');
+      return;
+    }
+    const now = snap();
+    if (g.coach && g.coach.fired) { reason = 'você foi demitido'; break; }
+    if (now.offers > before.offers) { reason = 'proposta grande por um jogador importante'; break; }
+    if (now.jobs > before.jobs) { reason = 'um clube quer contratar você'; break; }
+    if (now.nat && !before.nat) { reason = 'convite de seleção'; break; }
+    if (now.ult && !before.ult) { reason = 'a diretoria deu um ultimato'; break; }
+    if (now.pcOffers > before.pcOffers) { reason = 'chegou uma proposta para você'; break; }
+    if (now.win && !before.win) { reason = 'a janela de transferências abriu'; break; }
+    if (g.pendingEvent) { reason = 'um evento precisa da sua decisão'; break; }
+  }
+  S.prep = null;
+  autosave();
+  const rounds = g.round - r0;
+  UI.toast(`⏩ ${rounds ? rounds + ' semana(s) simulada(s)' : sim ? 'Jogo de copa simulado' : 'Nada simulado'}${reason ? ' · parou: ' + reason : ''}.`, 5000);
+  render(true);
+}
+
 // Avisa conquistas novas (depois de cada semana)
 function announceAch() {
   const f = checkAchievements(S.game);
@@ -345,6 +425,7 @@ function endMatch() {
   // Manchete e entrevista depois do jogo
   const headline = matchHeadline(S.game, m);
   if (headline) addPress(S.game, headline);
+  if (out.seasonEnd) challengeEnd(out.seasonEnd);
   S.lastRound = { roundIndex, fixtures, title, seasonEnd: out.seasonEnd, press: { headline, iv: interview(S.game, m), answered: null } };
   S.prep = null;
   autosave();
@@ -360,6 +441,7 @@ function advanceWeek(quiet = false) {
   announceAch();
   S.prep = null;
   if (out.seasonEnd) {
+    challengeEnd(out.seasonEnd);
     autosave();
     S.lastRound = { roundIndex, fixtures: [], seasonEnd: out.seasonEnd };
     go('roundSummary');
@@ -378,6 +460,35 @@ const ACTIONS = {
     UI.toast(ok ? '🔔 Notificações ligadas!' : 'Permissão negada. Libere nas configurações do celular (Notificações do site/app).', 4500); render(true);
   },
   notifOff: () => { S.settings.notif = false; Notif.setNotifEnabled(false); saveSettings(); Notif.saveReminder(null); UI.toast('🔕 Notificações desligadas.'); render(true); },
+  startChallenge: async d => {
+    const c = challengeClub(S.db, d.v);
+    if (!c) return;
+    const ans = await askCoachName(c, 'normal');
+    if (ans == null) return;
+    try { localStorage.setItem('brasfoot_coach_name', ans.name); } catch { /* */ }
+    S.game = await busy('Montando o desafio…', () => { const g = createGame(S.db, c.id, ans.name); applyDifficulty(g, 'normal'); applyChallenge(g, d.v); return g; });
+    autosave(); go('hub');
+    UI.toast(`${S.game.challenge.emoji} Desafio: ${S.game.challenge.goal.text}`, 5000);
+  },
+  shareCareer: async () => {
+    const r = await shareCareer(S.game);
+    if (r === 'download') UI.toast('📸 Imagem salva! Procure "estrategia-fc.png" nos downloads.', 4000);
+  },
+  quickSim: () => busy('Simulação rápida…', () => quickSim()),
+  eventAnswer: d => { const r = answerEvent(S.game, d.v); UI.toast(r.msg, 5000); autosave(); render(true); },
+  lifeTab: d => { S.lifeTab = d.v; render(true); },
+  lifeBuy: async d => {
+    const it = LIFE.ITEMS.find(x => x[0] === d.v);
+    if (!it || !(await UI.confirmBox(`${it[2]} ${it[3]} por <b>${money(it[4])}</b>?`, 'Comprar'))) return;
+    const r = LIFE.buyItem(S.game, d.v); UI.toast(r.msg, 3500); if (r.ok) { Sound.success(); autosave(); } render(true);
+  },
+  lifeSell: async d => {
+    const it = LIFE.ITEMS.find(x => x[0] === d.v);
+    if (!it || !(await UI.confirmBox(`Vender ${it[3]} por <b>${money(Math.round(it[4] * 0.6))}</b>?`, 'Vender'))) return;
+    const r = LIFE.sellItem(S.game, d.v); UI.toast(r.msg); autosave(); render(true);
+  },
+  lifeService: d => { const r = LIFE.toggleService(S.game, d.v); UI.toast(r.msg); autosave(); render(true); },
+  lifeInvest: d => { const L = LIFE.life(S.game), f = Number(d.v); const r = LIFE.invest(S.game, f < 0 ? -L.invest : L.cash * f); UI.toast(r.msg); autosave(); render(true); },
   devTab: d => { S.devTab = d.v; render(true); },
   acadUp: () => { const r = ACAD.upgradeAcademy(S.game); UI.toast(r.msg, 3500); if (r.ok) { Sound.success(); autosave(); } render(true); },
   kidUp: d => { const r = ACAD.promoteKid(S.game, d.id); UI.toast(r.msg, 3500); if (r.ok) autosave(); render(true); },
@@ -401,10 +512,11 @@ const ACTIONS = {
   },
   pickClub: async d => {
     const c = S.db.clubs.find(x => x.id === d.id);
-    const name = await askCoachName(c);
-    if (name == null) return;
+    const ans = await askCoachName(c);
+    if (ans == null) return;
+    const name = ans.name;
     try { localStorage.setItem('brasfoot_coach_name', name); } catch { /* sem problema */ }
-    S.game = await busy('Montando o mundo…', () => createGame(S.db, c.id, name));
+    S.game = await busy('Montando o mundo…', () => { const g = createGame(S.db, c.id, name); applyDifficulty(g, ans.diff); return g; });
     autosave();
     go('hub');
   },
@@ -495,6 +607,8 @@ const ACTIONS = {
   compareCancel: () => endCompare(),
 
   // Negociação
+  negoOpt: d => { S.nego[d.k] = d.k === 'sellOn' ? Number(d.v) : d.v; S.nego.msg = null; UI.updateModal(negotiationModal(S, d.id, S.nego)); },
+  counterOffer: d => { const r = counterOffer(S.game, d.id, Number(d.v)); UI.toast(r.msg, 4000); autosave(); UI.closeModal(); render(true); },
   negotiate: d => {
     const p = S.game.players[d.id], uc = userClub(S.game);
     S.nego = { id: d.id, fee: p.clubId ? askingPrice(S.game, p) : 0, wage: wageAsk(S.game, p, uc), years: p.age >= 30 ? 2 : 3 };
@@ -503,7 +617,7 @@ const ACTIONS = {
   negoYears: d => { S.nego.years = Number(d.v); S.nego.msg = null; UI.updateModal(negotiationModal(S, d.id, S.nego)); },
   negoSend: d => {
     const p = S.game.players[d.id];
-    const r = negotiate(S.game, p, S.nego.fee, S.nego.wage, S.nego.years);
+    const r = negotiate(S.game, p, S.nego.fee, S.nego.wage, S.nego.years, { sellOn: S.nego.sellOn || 0, clause: S.nego.clause || 'none' });
     if (r.status === 'accepted') { UI.closeModal(); Sound.success(); UI.toast('✍️ ' + r.msg, 3500); autosave(); render(true); return; }
     if (r.status === 'counter') { S.nego.fee = r.counterFee; S.nego.wage = r.counterWage; }
     S.nego.msg = r.msg; S.nego.ok = false; S.nego.tries = r.triesLeft;
@@ -548,19 +662,6 @@ const ACTIONS = {
   loanIn: d => result(loanIn(S.game, S.game.players[d.id]), d.id),
   acceptOffer: d => { UI.closeModal(); result(acceptOffer(S.game, d.id)); },
   rejectOffer: d => { UI.closeModal(); rejectOffer(S.game, d.id); UI.toast('Proposta recusada.'); autosave(); render(true); },
-  editPlayer: d => UI.openModal(SC.editPlayerModal(S, d.id)),
-  savePlayerEdit: d => {
-    const p = S.game.players[d.id];
-    const v = k => document.getElementById('ed-' + k).value;
-    p.name = v('name').trim().slice(0, 40) || p.name;
-    p.pos = v('pos');
-    p.age = clamp(Math.round(Number(v('age')) || p.age), 15, 45);
-    for (const k of ['fin', 'pas', 'def', 'for', 'res', 'gk']) p.attrs[k] = clamp(Math.round(Number(v(k)) || p.attrs[k]), 1, 99);
-    p.potential = Math.max(overall(p), clamp(Math.round(Number(v('potential')) || p.potential), 1, 99));
-    p.value = marketValue(p);
-    p.fictional = false;
-    result({ ok: true, msg: 'Jogador atualizado.' }, d.id);
-  },
 
   // Tática
   setFormation: d => { const uc = userClub(S.game); uc.formation = d.v; autoLineup(S.game, uc); render(true); },
@@ -633,6 +734,8 @@ const ACTIONS = {
     S.game = await busy('Montando o mundo…', () => PC.createPlayerGame(S.db, { name, pos: S.np.pos, nat: S.np.nat, clubId: c.id }));
     autosave(); go('hub');
   },
+  pcPlan: d => { S.game.pc.plan = d.v; if (d.v === 'focado' && !S.game.pc.focus) S.game.pc.focus = 'fin'; autosave(); render(true); },
+  pcFocus: d => { S.game.pc.focus = d.v; autosave(); render(true); },
   pcTrain: d => { const r = PC.trainAttr(S.game, d.v); UI.toast(r.msg); if (r.ok) autosave(); render(true); },
   pcAccept: async d => {
     const c = S.game.clubs.find(x => x.id === d.id);

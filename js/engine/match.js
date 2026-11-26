@@ -246,7 +246,7 @@ export class Match {
 
   P(id) { return this.game.players[id]; }
   // Time controlado pelo usuário (no modo carreira de jogador, quem escala é a IA)
-  human(t) { return t.club.id === this.userClubId && !this.pcId; }
+  human(t) { return t.club.id === this.userClubId && !this.pcId && !this.game.quickSim; }
 
   // Calcula as forças do time agora (muda com cansaço, expulsões, trocas)
   strength(t) {
@@ -268,8 +268,9 @@ export class Match {
     const ti = this.teams ? this.teams.indexOf(t) : -1;
     const fx = (this.talkFx && this.talkFx[ti]) || {}; // conversa do técnico
     const ins = INSTR[(this.instr && this.instr[ti]) || 'normal'];
+    const thr = this.fixSide === ti && ti >= 0 ? 0.55 : 1;   // esquema de apostas: o time entrega o jogo
     return {
-      att: att * st.att * h * (fx.att || 1) * ins.att, mid: mid * st.mid * h * (fx.mid || 1) * ins.mid, def: def * st.def * mk.def * (fx.def || 1) * ins.def, gk,
+      att: att * st.att * h * (fx.att || 1) * ins.att * thr, mid: mid * st.mid * h * (fx.mid || 1) * ins.mid * thr, def: def * st.def * mk.def * (fx.def || 1) * ins.def * thr, gk: gk * thr,
       cenShare: cen / ((cen + wide) || 1),                 // ~0,5 em formações equilibradas
       pas: pas / Math.max(1, t.onField.length)
     };
@@ -388,7 +389,10 @@ export class Match {
     const sh = pickWeighted(shooters, shooters.map(x => SHOOT_W[x.slot] * Math.pow(this.P(x.id).attrs.fin, 1.5)));
     // Modo carreira: lance decisivo do SEU jogador — a tela pergunta o que fazer
     const pcF = this.pcLive && this.pcId ? t.onField.find(x => x.id === this.pcId) : null;
-    if (pcF && (sh.id === this.pcId || rnd() < (pcF.slot === "ATA" || pcF.slot === "MEI" ? 0.4 : 0.22))) {
+    // chance por posição (atacante participa mais) e no máximo 3 lances por jogo
+    const PC_CH = { ATA: 0.3, MEI: 0.2, VOL: 0.13, LAT: 0.13, ZAG: 0.1, GOL: 0 };
+    if (pcF && (this.pcMoments || 0) < 3 && (sh.id === this.pcId ? rnd() < 0.75 : rnd() < (PC_CH[pcF.slot] || 0.05))) {
+      this.pcMoments = (this.pcMoments || 0) + 1;
       this.pcPending = { i, q };
       this.log('pcmoment', i, `🎯 ${this.P(this.pcId).name} recebe a bola em boa posição! O que fazer?`);
       return;

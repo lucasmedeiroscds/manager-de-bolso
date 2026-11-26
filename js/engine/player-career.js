@@ -19,6 +19,13 @@ import { FORMATIONS, autoLineup, clubPlayers, touchPlayers } from './tactics.js'
 import { addTx } from './finance.js';
 import { windowOpen } from './market.js';
 import { rnd, clamp, pick, money } from '../util.js';
+import { life, perks, weeklyLife, lifeAfterMatch, signingBonus } from './life.js';
+import { PC_PLANS } from './evolution.js';
+
+// Experiência para ganhar 1 ponto: cresce com o seu nível
+export const xpNeed = p => 100 + Math.max(0, overall(p) - 50) * 8;
+// Custo (em pontos) para subir um atributo: atributo alto custa mais
+export const attrCost = v => v >= 85 ? 3 : v >= 72 ? 2 : 1;
 
 export const isPlayerMode = game => !!(game && game.mode === 'player' && game.pc);
 export const pcPlayer = game => game.players[game.pc.id];
@@ -94,15 +101,16 @@ export function afterPcMatch(game, m) {
   const msgs = [];
   const t = m.teams.find(x => x.club.id === p.clubId);
   if (!t) return msgs;
+  lifeAfterMatch(game, m);
   if (!t.used.has(p.id)) {
     pc.trust = clamp(pc.trust + (pc.trust < 60 ? 1.5 : 0), 0, 100); // treinando forte, espera a chance
     return msgs;
   }
   const r = (m.ratings && m.ratings[p.id]) || 6;
   const g = t.scorers.filter(s => s.id === p.id).length, a = t.scorers.filter(s => s.assist === p.id).length;
-  const xp = Math.round(r * 8 + g * 20 + a * 10 + (m.competition !== 'league' ? 10 : 0));
+  const xp = Math.round((Math.max(0, r - 4) * 6 + g * 10 + a * 5 + (m.competition !== 'league' ? 5 : 0)) * (1 + perks(game).xp));
   pc.xp += xp;
-  while (pc.xp >= 100) { pc.xp -= 100; pc.pts++; msgs.push('🎯 Você ganhou 1 ponto de treino! Use na tela Carreira.'); }
+  while (pc.xp >= xpNeed(p)) { pc.xp -= xpNeed(p); pc.pts++; msgs.push('🎯 Você ganhou 1 ponto de treino! Use na tela Carreira.'); }
   const dt = (r - 6.4) * 6;
   pc.trust = clamp(pc.trust + dt, 0, 100);
   pc.ratings.unshift(r); pc.ratings.length = Math.min(pc.ratings.length, 10);
@@ -116,11 +124,12 @@ export function afterPcMatch(game, m) {
 // Treinar: gasta 1 ponto em um atributo (até o potencial)
 export function trainAttr(game, k) {
   const pc = game.pc, p = pcPlayer(game);
-  if (pc.pts <= 0) return { ok: false, msg: 'Sem pontos de treino. Jogue para ganhar experiência.' };
+  const cost = attrCost(p.attrs[k]);
+  if (pc.pts < cost) return { ok: false, msg: pc.pts <= 0 ? 'Sem pontos de treino. Jogue e treine para ganhar experiência.' : `Esse atributo já está alto: custa ${cost} pontos.` };
   if (p.attrs[k] >= 99) return { ok: false, msg: 'Esse atributo já está no máximo.' };
   p.attrs[k]++;
   if (overall(p) > p.potential) { p.attrs[k]--; return { ok: false, msg: 'Você chegou ao seu potencial nessa função. Treine outro atributo.' }; }
-  pc.pts--;
+  pc.pts -= cost;
   p.value = marketValue(p);
   return { ok: true, msg: `+1 em ${k.toUpperCase()}!` };
 }
@@ -157,7 +166,15 @@ export function weeklyPc(game) {
   const msgs = [];
   pc.offers = pc.offers.filter(o => o.expires >= game.round);
   const avg = pc.ratings.length ? pc.ratings.reduce((s, x) => s + x, 0) / pc.ratings.length : 6;
-  if (windowOpen(game) && rnd() < 0.08 + Math.max(0, avg - 6.5) * 0.12) {
+  msgs.push(...weeklyLife(game));
+  const plan = PC_PLANS[pc.plan || 'normal'] || PC_PLANS.normal;
+  if (p.injury <= 0 && !(pc.ban > 0 && plan !== PC_PLANS.descanso)) {
+    p.fitness = clamp(p.fitness + plan.fit, 10, 100);
+    pc.trust = clamp(pc.trust + plan.trust, 0, 100);
+    if (plan.xp) { pc.xp += Math.round(plan.xp * (1 + perks(game).xp)); while (pc.xp >= xpNeed(p)) { pc.xp -= xpNeed(p); pc.pts++; msgs.push('🎯 O treino rendeu: +1 ponto de treino!'); } }
+    if (plan.inj && rnd() < plan.inj) { p.injury = 1 + Math.floor(rnd() * 3); msgs.push(`🤕 Você se machucou no treino (${plan.name.toLowerCase()}): ${p.injury} semana(s) fora.`); }
+  } else if (p.injury > 0 && pc.plan !== 'descanso') p.fitness = clamp(p.fitness + 4, 10, 100);
+  if (windowOpen(game) && rnd() < 0.08 + Math.max(0, avg - 6.5) * 0.12 + life(game).fame / 600) {
     const o = makePcOffers(game, 1);
     if (o.length && !o[0].renew) msgs.push(`📨 O ${game.clubs.find(c => c.id === o[0].clubId).name} quer contratar você! Veja em Carreira.`);
   }
@@ -182,7 +199,8 @@ export function acceptPcOffer(game, clubId) {
   const old = game.clubs.find(c => c.id === p.clubId), nc = game.clubs.find(c => c.id === clubId);
   p.contract = { wage: o.wage, years: o.years };
   pc.offers = [];
-  if (o.renew) { pc.trust = clamp(pc.trust + 5, 0, 100); return { ok: true, msg: `Contrato renovado com o ${nc.name} por ${o.years} anos!` }; }
+  const luvas = signingBonus(game, o.wage, o.renew);
+  if (o.renew) { pc.trust = clamp(pc.trust + 5, 0, 100); return { ok: true, msg: `Contrato renovado com o ${nc.name} por ${o.years} anos! Luvas: ${money(luvas)}.` }; }
   if (o.fee) { addTx(game, nc.id, `Compra de ${p.name}`, -o.fee); addTx(game, old.id, `Venda de ${p.name}`, o.fee); }
   p.clubId = nc.id; p.loan = null; p.listed = false;
   game.userClubId = nc.id;
@@ -190,7 +208,7 @@ export function acceptPcOffer(game, clubId) {
   pc.clubs = [...(pc.clubs || []), { season: game.season, club: old.name }];
   touchPlayers(game);
   autoLineup(game, old); autoLineup(game, nc); pcLineup(game, nc);
-  return { ok: true, msg: `✍️ Você é o novo reforço do ${nc.name}! Salário de ${money(o.wage)}/semana.` };
+  return { ok: true, msg: `✍️ Você é o novo reforço do ${nc.name}! Salário de ${money(o.wage)}/semana e luvas de ${money(luvas)}.` };
 }
 
 export function rejectPcOffer(game, clubId) {

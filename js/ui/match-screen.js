@@ -395,9 +395,10 @@ function pressBlock(pr) {
   if (!pr || !pr.headline) return '';
   const h = pr.headline, iv = pr.iv;
   return `<div class="news-hero ${h.tone}"><div class="tiny">${icon('news', 13)} MANCHETE</div><h2>${esc(h.title)}</h2><p class="small">${esc(h.text)}</p></div>
-  ${iv ? `<div class="card"><div class="tiny muted">${icon('whistle', 13)} ENTREVISTA</div><p style="margin:6px 0 10px"><b>“${esc(iv.q)}”</b></p>
+  ${iv && iv.note ? `<div class="card small" style="border-color:${iv.note.startsWith('✅') ? 'var(--good)' : 'var(--bad)'}">${esc(iv.note)}</div>` : ''}
+  ${iv && iv.q ? `<div class="card"><div class="tiny muted">${icon('whistle', 13)} ENTREVISTA</div><p style="margin:6px 0 10px"><b>“${esc(iv.q)}”</b></p>
     ${iv.a.map((t, i) => pr.answered ? `<div class="press-ans ${pr.answered.idx === i ? 'on' : 'off'}">${esc(t)}</div>` : `<button class="press-ans" data-act="pressAnswer" data-v="${i}">${esc(t)}</button>`).join('')}
-    ${pr.answered ? `<p class="tiny accent" style="margin:8px 0 0">${esc(pr.answered.fx)}</p>` : '<p class="tiny muted" style="margin:8px 0 0">Sua resposta mexe na moral, na diretoria e na torcida.</p>'}</div>` : ''}`;
+    ${pr.answered ? `<p class="tiny accent" style="margin:8px 0 0">${esc(pr.answered.fx)}</p>` : '<p class="tiny muted" style="margin:8px 0 0">Cada resposta tem um tom. Repetir sempre o mesmo discurso perde efeito, e promessas são cobradas no jogo seguinte.</p>'}</div>` : ''}`;
 }
 
 // Resumo depois da rodada
