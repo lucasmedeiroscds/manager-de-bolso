@@ -2,7 +2,8 @@
 // career-screen.js — tela da CARREIRA DO TÉCNICO
 // (perfil, diretoria e torcida, metas, propostas, troféus, histórico)
 // =============================================================
-import { esc } from '../util.js';
+import { esc, money } from '../util.js';
+import { natBadge } from './nations-screen.js';
 import { evaluate, coachLevel, LEVELS } from '../engine/career.js';
 import { clubById } from '../engine/market.js';
 import { badge } from './ui.js';
@@ -47,6 +48,7 @@ function offerCard(g, o, fired) {
       <div class="tiny muted">${icon('bell', 12)} PROPOSTA DE EMPREGO</div>
       <b class="ellipsis" style="display:block;font-size:17px">${esc(c.name)}</b>
       <div class="small muted ellipsis">${L ? flag(L.country) + ' ' + esc(L.name) : ''} · reputação ${c.rep}</div>
+      ${o.fee && !fired ? `<div class="tiny good">Paga multa rescisória de ${money(o.fee)} ao seu clube atual</div>` : ''}
       <div class="btn-row" style="margin-top:8px">
         <button class="btn-sm btn-good" data-act="acceptJob" data-id="${o.clubId}">Aceitar</button>
         ${fired ? '' : `<button class="btn-sm" data-act="rejectJob" data-id="${o.id}">Recusar</button>`}
@@ -96,6 +98,20 @@ export function careerScreen(S) {
     ${c.offers.map(o => offerCard(g, o, c.fired)).join('')}
     ${c.fired ? '' : '<p class="tiny muted">Aceitar troca de clube na hora: o clube atual volta a ser da IA.</p>'}` : ''}
 
+  ${c.natOffer ? `<div class="section-title"><h3>Convite de seleção</h3><span class="tag warn">1</span></div>
+    <div class="offer" style="--oc:var(--gold)">${natBadge(c.natOffer.nat, 'lg')}
+      <div class="grow" style="min-width:0"><div class="tiny muted">🧢 CONVITE DA FEDERAÇÃO</div>
+        <b class="ellipsis" style="display:block;font-size:17px">Seleção: ${flag(c.natOffer.nat)} ${esc(c.natOffer.nat)}</b>
+        <div class="small muted">${c.natOffer.rank}ª do ranking · você continua no clube</div>
+        <div class="btn-row" style="margin-top:8px"><button class="btn-sm btn-good" data-act="acceptNation">Aceitar</button><button class="btn-sm" data-act="rejectNation">Recusar</button></div>
+      </div></div>` : ''}
+
+  <div class="section-title"><h3>Seleção</h3></div>
+  ${c.nation ? `<div class="card tap-card" data-act="go" data-to="nations" data-view="minha"><div class="row" style="gap:12px">${natBadge(c.nation.nat, 'lg')}
+      <div class="grow"><b>${flag(c.nation.nat)} ${esc(c.nation.nat)}</b><div class="small muted">Técnico desde ${c.nation.since} · formação ${esc(c.nation.formation)}</div>
+      <div class="tiny muted">${c.nation.squad.length ? 'Convocação sua' : 'Convocação automática'} · toque para convocar</div></div>${icon('chevron', 18, 'chev')}</div></div>`
+    : `<p class="small muted">Com reputação 55 ou mais, seleções podem convidar você (no fim da temporada ou, mais raro, durante ela). Quanto maior a reputação, mais forte a seleção.${(c.natPast || []).length ? '<br>Passagens: ' + c.natPast.map(p => `${esc(p.nat)} (${p.from}–${p.to}${p.note === 'Demitido' ? ', demitido' : ''})`).join(', ') : ''}</p>`}
+
   ${c.fired ? '' : `<div class="section-title"><h3>Metas de ${g.season}</h3><span class="tag ${done ? 'good' : ''}">${done}/${evs.length}</span></div>
   <div class="list stagger">${evs.map(({ o, s }) => `<div class="item">
     <span class="ic-box" style="width:36px;height:36px;border-radius:10px;display:flex;align-items:center;justify-content:center;background:rgba(255,255,255,.06)">${icon(o.kind === 'league' ? 'chart' : o.kind === 'cup' ? 'trophy' : 'coin', 18)}</span>
@@ -125,6 +141,8 @@ export function careerCard(S) {
       <div><span class="tiny muted">TORCIDA</span><div class="bar"><i style="width:${c.fans}%;background:${moodCol(c.fans)}"></i></div></div>
     </div>
     ${c.offers.length ? `<div class="tag warn" style="margin-top:10px;display:inline-block">📨 ${c.offers.length} proposta(s) de emprego</div>` : ''}
+    ${c.natOffer ? `<div class="tag warn" style="margin-top:10px;display:inline-block">🧢 Convite da seleção ${esc(c.natOffer.nat)}</div>` : ''}
+    ${c.nation ? `<div class="tiny muted" style="margin-top:8px">🧢 Também técnico da seleção: <b>${esc(c.nation.nat)}</b></div>` : ''}
   </div>`;
 }
 

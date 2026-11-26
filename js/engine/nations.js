@@ -73,6 +73,18 @@ export function callUp(game, nat, pool) {
   return out;
 }
 
+// Seleção treinada pelo usuário: usa a convocação dele (se tiver feito uma).
+// Jogadores aposentados/lesionados saem; se faltar gente, completa com a automática.
+export function userNationSquad(game, nat, pool) {
+  const n = game.coach && game.coach.nation;
+  if (!n || n.nat !== nat || !n.squad || !n.squad.length) return null;
+  const mine = n.squad.map(id => game.players[id]).filter(p => p && p.clubId && p.nat === nat && p.injury <= 1);
+  if (mine.length >= 26) return mine.slice(0, 26);
+  const have = new Set(mine.map(p => p.id));
+  for (const p of callUp(game, nat, pool)) { if (mine.length >= 23) break; if (!have.has(p.id)) mine.push(p); }
+  return mine;
+}
+
 // Força da seleção: média dos 11 melhores convocados
 export function nationStrength(squad) {
   const top = squad.map(p => overall(p)).sort((a, b) => b - a).slice(0, 11);
@@ -87,7 +99,7 @@ export function nationRanking(game) {
   const out = [];
   for (const nat in byNat) {
     if (byNat[nat].length < 18) continue;
-    const sq = callUp(game, nat, byNat[nat]);
+    const sq = userNationSquad(game, nat, byNat[nat]) || callUp(game, nat, byNat[nat]);
     if (sq.length < 18 || !sq.some(p => p.pos === 'GOL')) continue;
     out.push({ nat, squad: sq, str: nationStrength(sq), cont: natInfo(nat)[0] });
   }
@@ -95,9 +107,8 @@ export function nationRanking(game) {
 }
 
 // "Clube" temporário da seleção, para o motor de partidas
-function nationClub(nat, squad) {
+function nationClub(nat, squad, formation = '4-3-3') {
   const [, c1, c2, short] = natInfo(nat);
-  const formation = '4-3-3';
   const slots = FORMATIONS[formation];
   const used = new Set();
   const lineup = slots.map(slot => {
@@ -144,7 +155,8 @@ export function runTournament(game, def, year) {
   const teams = ranking.slice(0, def.size);
   if (teams.length < 8) return null;
   const size = teams.length >= 32 ? 32 : teams.length >= 16 ? 16 : 8;
-  const field = teams.slice(0, size).map(t => ({ ...t, club: nationClub(t.nat, t.squad) }));
+  const un = game.coach && game.coach.nation;
+  const field = teams.slice(0, size).map(t => ({ ...t, club: nationClub(t.nat, t.squad, un && un.nat === t.nat && FORMATIONS[un.formation] ? un.formation : '4-3-3') }));
   // potes por força
   const nG = size / 4;
   const pots = [0, 1, 2, 3].map(k => field.slice(k * nG, (k + 1) * nG));

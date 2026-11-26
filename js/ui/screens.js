@@ -5,7 +5,7 @@ import { esc, money } from '../util.js';
 import { overall, effectiveRating, POS_NAMES, POSITIONS } from '../engine/ratings.js';
 import { FORMATIONS, STYLES, MARKING, FOCUS, clubPlayers, teamStrength, isAvailable } from '../engine/tactics.js';
 import { standings, userClub, userLeague, userFixture, leagueRounds, nextUserMatch } from '../engine/season.js';
-import { cupStatus, groupTable, cupScorers } from '../engine/cups.js';
+import { cupStatus, groupTable, cupScorers, qualZones } from '../engine/cups.js';
 import { windowOpen, askingPrice, wageAsk, clubById } from '../engine/market.js';
 import { weeklyWages } from '../engine/finance.js';
 import { TRAIN_FOCUS, TRAIN_INTENSITY } from '../engine/evolution.js';
@@ -518,21 +518,31 @@ export function tableScreen(S) {
   const z = Math.max(2, Math.round(n / 5));
   const zTop = zs ? (zs.promote || z) : z, zBot = zs ? zs.relegate : z;
   const mine = g.history.filter(h => h.champions && h.champions[lid]);
+  const qz = zs && zs.promote ? null : qualZones(g, lid);   // vagas nas copas (1ª divisão)
+  const zl = (col, txt) => `<div><span class="zl" style="background:${col}"></span>${txt}</div>`;
+  const legend = qz && qz.t1
+    ? zl('var(--accent2)', `1º ao ${qz.t1.n}º: ${esc(qz.t1.name)}`)
+      + (qz.t2 ? zl('var(--warn)', `${qz.t1.n + 1}º ao ${qz.t1.n + qz.t2.n}º: ${esc(qz.t2.name)}`) : '')
+      + (qz.nat ? zl('var(--good)', `1º ao ${qz.nat.n}º: direto nas oitavas da ${esc(qz.nat.name)}`) : '')
+      + (zBot ? zl('var(--bad)', `${zBot} últimos ${zs ? 'caem para a 2ª divisão' : ''}`) : '')
+      + '<div style="margin-top:2px">As vagas valem para a próxima temporada.</div>'
+    : '';
   return head + `
   <div class="card" style="padding:6px 8px">
   <table>
     <tr><th>#</th><th style="text-align:left">Clube</th><th>P</th><th>J</th><th>V</th><th>SG</th><th>Últ.</th></tr>
     ${st.map((s, i) => {
       const c = club(g, s.id);
-      const cls = [s.id === g.userClubId ? 'me' : '', i < zTop ? 'g4' : '', zBot && i >= n - zBot ? 'z4' : ''].join(' ');
+      const zone = qz && qz.t1 ? (i < qz.t1.n ? 'q1' : qz.t2 && i < qz.t1.n + qz.t2.n ? 'q2' : '') : i < zTop ? 'g4' : '';
+      const cls = [s.id === g.userClubId ? 'me' : '', zone, zBot && i >= n - zBot ? 'z4' : ''].join(' ');
       return `<tr class="${cls}"><td>${i + 1}</td>
         <td class="team"><span class="row" style="gap:6px">${badge(c, 'sm')}<span class="ellipsis" style="max-width:120px">${esc(c.name)}</span></span></td>
         <td><b>${s.pts}</b></td><td>${s.j}</td><td>${s.v}</td><td>${s.gp - s.gc}</td>
         <td><span class="form">${s.form.slice(-3).map(r => `<i class="${r}"></i>`).join('')}</span></td></tr>`;
     }).join('')}
   </table></div>
-  <p class="tiny muted">${zs && zs.promote ? `<span class="good">▌</span> ${zTop} sobem para a 1ª divisão`
-    : `<span class="good">▌</span> ${zTop} primeiros &nbsp; ${zBot ? `<span class="bad">▌</span> ${zBot} ${zs ? 'caem para a 2ª divisão' : 'últimos'}` : ''}`}</p>
+  <div class="tiny muted" style="margin:8px 2px;line-height:1.7">${legend || (zs && zs.promote) ? legend || `<span class="good">▌</span> ${zTop} sobem para a 1ª divisão`
+    : `<span class="good">▌</span> ${zTop} primeiros &nbsp; ${zBot ? `<span class="bad">▌</span> ${zBot} ${zs ? 'caem para a 2ª divisão' : 'últimos'}` : ''}`}</div>
   ${mine.length ? `<h3>Campeões anteriores</h3><div class="list">${mine.map(h => `<div class="item small">🏆 ${h.season}: <b>${esc(h.champions[lid])}</b>${h.leagueId === lid ? ` · você: ${h.userPos}º` : ''}</div>`).join('')}</div>` : ''}`;
 }
 
@@ -569,7 +579,8 @@ function cupsView(S) {
       <div class="list">${r.ties.map(f => resultRow(g, f)).join('')}</div>`;
   }
   if (cup.byes && cup.byes.length && cup.rounds.length) {
-    html += `<p class="small muted">Entram direto na próxima fase: ${cup.byes.map(id => esc(club(g, id).name)).join(', ')}.</p>`;
+    const nm = cup.byes.slice(0, 12).map(id => esc(club(g, id).name)).join(', ');
+    html += `<p class="small muted">${cup.type === 'continental' ? 'Já classificados para os grupos' : 'Entram direto numa fase seguinte'}: ${nm}${cup.byes.length > 12 ? ` e mais ${cup.byes.length - 12}` : ''}.</p>`;
   }
   // Grupos
   if (cup.groups.length) {
@@ -728,6 +739,7 @@ export function moreScreen(S) {
       ${it('go', 'medal', 'Prêmios', 'Melhor da liga e Melhor do Mundo', 'data-to="awards"', 'style="color:var(--gold);background:rgba(255,210,90,.12)"')}
       ${it('go', 'globe', 'Seleções e Copa do Mundo', 'Ranking, convocações, Copa, Euro e Copa América', 'data-to="nations"', 'style="color:var(--accent2);background:rgba(46,230,255,.12)"')}
       ${it('go', 'coin', 'Finanças', 'Caixa, ingressos e extrato', 'data-to="finance"')}
+      ${it('go', 'palette', 'Aparência e som', 'Tema nas cores do clube, apito, torcida', 'data-to="settings"')}
     </div>
     <h3>Jogo salvo</h3>
     <div class="list stagger">

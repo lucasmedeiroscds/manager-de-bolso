@@ -15,6 +15,7 @@ import { createCups, cupFixturesForWeek, processCups } from './cups.js';
 import { leagueAwards, worldAwards, titleBonus, grantAwards } from './awards.js';
 import { addSecondDivisions, promoteRelegate } from './divisions.js';
 import { runTournament, tournamentsAfter } from './nations.js';
+import { nationResult, nationOffer } from './national-coach.js';
 import { weeklyScouting } from './scouting.js';
 import { initCoach, setObjectives, afterUserMatch, weeklyCareer, seasonReview } from './career.js';
 
@@ -354,6 +355,12 @@ export function endSeason(game) {
     game.nationalCups = [t, ...(game.nationalCups || [])].slice(0, 12);
     summary.nationals.push({ name: t.name, year: t.year, champion: t.champion, runnerUp: t.runnerUp, best: t.best, userCalled: t.userCalled.length });
     inbox(game, `🌍 ${t.name} ${t.year}: ${t.champion} é campeão! (vice: ${t.runnerUp})${t.best ? ` · Craque: ${t.best.name}` : ''}`);
+    const nr = nationResult(game, t);
+    if (nr) {
+      summary.nationals[summary.nationals.length - 1].userNation = nr;
+      inbox(game, `🧢 Sua seleção (${nr.nat}) na ${t.name}: ${nr.stage}. Reputação ${nr.delta >= 0 ? '+' : ''}${nr.delta}.`);
+      if (nr.fired) inbox(game, `❌ A federação de ${nr.nat} demitiu você depois da ${t.name}.`);
+    }
     if (t.userCalled.length) inbox(game, `📣 ${t.userCalled.length} jogador(es) do seu clube foram convocados para a ${t.name}: ${t.userCalled.map(u => `${u.name} (${u.nat})`).join(', ')}.`);
   }
 
@@ -364,6 +371,8 @@ export function endSeason(game) {
     inbox(game, `📋 Balanço da temporada: ${cr.results.filter(r => r.state === 'done').length} de ${cr.results.length} metas cumpridas. Reputação ${cr.repDelta >= 0 ? '+' : ''}${cr.repDelta} (${cr.rep}, ${cr.level}).`);
     if (cr.firedNow) inbox(game, '❌ A diretoria não vai renovar com você. Escolha uma nova proposta em Carreira.');
     else if (game.coach.offers.length) inbox(game, `📨 ${game.coach.offers.length} clube(s) querem contratar você. Veja em Carreira.`);
+    const no = nationOffer(game);
+    if (no) inbox(game, `🧢 CONVITE: a seleção ${no.nat} (${no.rank}ª do ranking) quer você como técnico! Veja em Carreira.`);
   }
 
   const msgs = [...seasonContracts(game), ...seasonAging(game)];

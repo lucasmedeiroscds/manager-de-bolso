@@ -83,6 +83,19 @@ Assim o jogo funciona, mas só enquanto o PC estiver ligado. Para instalar de ve
   - **Olheiros:** você escolhe região, posição, perfil e duração, e recebe relatórios semanais com o potencial revelado.
   - **Comparar dois jogadores**, com os radares sobrepostos.
   - **Treino individual** por jogador.
+- **Sistema de vagas** (igual para todas as ligas de 1ª divisão, pela tabela da temporada anterior):
+  - 1º ao 4º → copa continental principal (Libertadores, Liga dos Campeões, Liga dos Campeões da Ásia, Concacaf).
+  - 5º ao 10º → copa continental secundária, onde existe (Sul-Americana, Liga Europa).
+  - 1º ao 8º → entram direto nas oitavas da copa nacional (os outros clubes, inclusive da 2ª divisão, disputam as fases antes).
+  - Quando há clubes demais para os grupos, os mais fracos jogam fases preliminares. A tabela mostra as faixas coloridas com a legenda.
+- **Técnico disputado e seleção:**
+  - Outros clubes podem tentar tirar você no meio da temporada, pagando multa rescisória ao seu clube.
+  - Com reputação 55+, seleções podem convidar você. Você acumula clube e seleção, faz a convocação (até 26) e escolhe a formação em Mais → Seleções → Minha.
+  - Nos torneios, a campanha é comparada ao esperado: a reputação sobe ou cai, o título vai para a sala de troféus e uma campanha muito ruim gera demissão.
+- **Aparência e som** (Mais → Aparência e som):
+  - **Tema nas cores do seu clube:** o destaque da interface vira a cor do clube, ajustada para ficar legível. Clubes preto e branco ganham destaque prateado. Dá para voltar ao verde-limão padrão.
+  - **Sons gerados pelo próprio jogo** (sem arquivos, funcionam offline): apito, chute, gol com torcida, "uuuh" nas chances, cartões, cliques e o murmúrio da torcida durante a partida.
+  - Efeitos e torcida ligam/desligam separadamente, o volume é ajustável e há um botão de mudo na tela da partida.
 - **Carreira do técnico** (Início → cartão do técnico, ou Mais → Carreira):
   - **Perfil:** seu nome, reputação de 0 a 100 e nível (Iniciante, Promissor, Experiente, Respeitado, Renomado, Elite, Lenda).
   - **Diretoria e Torcida:** dois medidores que mudam a cada jogo conforme o resultado comparado ao esperado. Vencer um time mais forte vale mais; perder para um mais fraco pesa mais.

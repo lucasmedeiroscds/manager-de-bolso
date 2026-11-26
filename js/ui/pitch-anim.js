@@ -17,6 +17,7 @@
 // y 0–100 (topo→base). O time do usuário fica embaixo e ataca para cima.
 // =============================================================
 import { layout } from './match-screen.js';
+import * as Sound from './sound.js';
 
 const R = Math.random;
 const lerp = (a, b, k) => a + (b - a) * k;
@@ -241,6 +242,7 @@ export class PitchAnimator {
         a.to = { x: bottom ? a.spot.x : 100 - a.spot.x, y: bottom ? a.spot.d * 50 : 100 - a.spot.d * 50 };
       } else a.to = { x: clamp(lerp(p0.x, 50, 0.4) + (R() - 0.5) * 20, 15, 85), y: this.yAt(a.team, a.to) };
     } else if (a.type === 'shot') {
+      if (!this.flushing) Sound.kick();
       const bottom = this.bottomOf(a.team);
       const line = bottom ? 0 : 100;
       const gk = this.gk(1 - a.team);
@@ -313,6 +315,8 @@ export class PitchAnimator {
         this.ball = { ...a.to };
         if (a.result === 'save' && a.gk) this.carrier = a.gk;
         else this.carrier = null;
+        // sons no instante em que a bola chega: gol ou "uuuh" da torcida
+        if (a.result === 'goal') Sound.goal(); else Sound.ooh();
         if (a.result === 'goal' && !this.flushing) {
           // "GOOOL!" na hora em que a bola entra + replay da jogada
           const fl = document.getElementById('mx-flash');

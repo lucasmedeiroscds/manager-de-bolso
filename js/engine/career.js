@@ -17,6 +17,9 @@ import { teamStrength, autoLineup } from './tactics.js';
 import { clubById } from './market.js';
 import { standings } from './season.js';
 import { zoneSizes } from './divisions.js';
+import { addTx } from './finance.js';
+import { money } from '../util.js';
+import { nationOffer } from './national-coach.js';
 
 export const LEVELS = [
   [0, 'Iniciante'], [25, 'Promissor'], [40, 'Experiente'], [55, 'Respeitado'],
@@ -80,10 +83,11 @@ export function setObjectives(game) {
       : rk <= Math.ceil(n * 0.2) ? 'Semifinal' : rk <= Math.ceil(n * 0.5) ? 'Quartas de final' : 'Oitavas de final';
     else {
       const strongest = cup.teams.slice().sort((a, b) => clubById(game, b).rep - clubById(game, a).rep).indexOf(uc.id) + 1;
-      stage = strongest <= cup.teams.length * 0.15 ? 'Semifinal' : strongest <= cup.teams.length * 0.4 ? 'Quartas de final' : cup.groups.length ? 'Oitavas de final' : 'Quartas de final';
-      if (cup.teams.length <= 16 && stage === 'Oitavas de final') stage = 'Quartas de final';
+      const size = Math.min(cup.teams.length, cup.target || cup.teams.length);  // clubes na fase de grupos
+      stage = strongest <= size * 0.15 ? 'Semifinal' : strongest <= size * 0.4 ? 'Quartas de final' : strongest <= size ? 'Oitavas de final' : 'Fase de grupos';
+      if (size <= 16 && stage === 'Oitavas de final') stage = 'Quartas de final';
     }
-    objs.push({ id: 'C' + cup.id, kind: 'cup', cupId: cup.id, stage, text: `${cup.name}: chegar ${stage === 'Semifinal' ? 'à semifinal' : stage === 'Final' ? 'à final' : 'às ' + stage.toLowerCase()}`, weight: cup.type === 'national' ? 1 : 2 });
+    objs.push({ id: 'C' + cup.id, kind: 'cup', cupId: cup.id, stage, text: `${cup.name}: chegar ${stage === 'Semifinal' ? 'à semifinal' : stage === 'Final' ? 'à final' : stage === 'Fase de grupos' ? 'à fase de grupos' : 'às ' + stage.toLowerCase()}`, weight: cup.type === 'national' ? 1 : 2 });
   }
   objs.push({ id: 'F', kind: 'finance', text: 'Terminar a temporada com o caixa positivo', weight: 1 });
   c.objectives = objs;
@@ -92,7 +96,7 @@ export function setObjectives(game) {
 // Fase mais avançada que o clube alcançou numa copa
 function stageReached(cup, clubId) {
   if (cup.champion === clubId) return 'Campeão';
-  let best = cup.groups.length && cup.teams.includes(clubId) ? 'Fase de grupos' : 'Fase preliminar';
+  let best = cup.groups.some(g => g.clubIds.includes(clubId)) ? 'Fase de grupos' : 'Fase preliminar';
   for (const r of cup.rounds) if (r.ties.some(f => f.h === clubId || f.a === clubId) && stageIdx(r.name) > stageIdx(best)) best = r.name;
   return best;
 }
@@ -101,7 +105,8 @@ function eliminated(cup, clubId) {
   if (cup.runnerUp === clubId) return true;
   if (cup.rounds.some(r => r.ties.some(f => f.r && (f.h === clubId || f.a === clubId) && f.r.winner && f.r.winner !== clubId))) return true;
   // caiu nos grupos?
-  if (cup.groups.length && cup.rounds.length && !cup.rounds[0].ties.some(f => f.h === clubId || f.a === clubId)) return true;
+  const ko = cup.rounds.find(r => !r.qual);
+  if (cup.groups.length && ko && !ko.ties.some(f => f.h === clubId || f.a === clubId)) return true;
   return false;
 }
 
@@ -187,13 +192,18 @@ export function weeklyCareer(game) {
     fire(game, 'A diretoria perdeu a confiança no seu trabalho.');
     msgs.push(`❌ Você foi demitido do ${clubById(game, game.userClubId).name}.`);
   }
-  // Proposta no meio da temporada (técnico em alta)
-  if (!c.fired && c.rep >= 55 && rnd() < 0.04 && !c.offers.length) {
-    const off = makeOffers(game, 1, c.rep - 8, c.rep + 6);
-    if (off.length) { c.offers = off; msgs.push(`📨 O ${clubById(game, off[0].clubId).name} quer contratar você! Veja em Carreira.`); }
+  // Outro clube quer "comprar" o técnico no meio da temporada (pagando multa)
+  if (!c.fired && c.rep >= 45 && !c.offers.length && game.round >= 3 && rnd() < 0.02 + (c.rep - 45) / 1500 + (c.board >= 70 ? 0.01 : 0)) {
+    const off = makeOffers(game, 1, c.rep - 8, c.rep + 8);
+    if (off.length) msgs.push(`📨 O ${clubById(game, off[0].clubId).name} quer tirar você do clube e paga multa de ${money(off[0].fee)}! Veja em Carreira.`);
+    if (off.length) c.offers = off;
   }
+  // Convite de seleção no meio da temporada (raro)
+  const no = nationOffer(game, true);
+  if (no) msgs.push(`🧢 CONVITE: a seleção ${no.nat} quer você como técnico! Veja em Carreira.`);
   // Propostas vencidas
   c.offers = c.offers.filter(o => o.expires == null || o.expires >= game.round);
+  if (c.natOffer && c.natOffer.expires < game.round) c.natOffer = null;
   return msgs;
 }
 
@@ -231,7 +241,9 @@ function makeOffers(game, n, minRep, maxRep, exclude = game.userClubId) {
     let x = rnd() * tot, cl = cand[0];
     for (const k of cand) { x -= weight(k); if (x <= 0) { cl = k; break; } }
     used.add(cl.id);
-    out.push({ id: newId('j'), clubId: cl.id, expires: game.round + 3 });
+    // multa rescisória paga ao clube atual (se o técnico estiver empregado)
+    const fee = game.coach && !game.coach.fired ? Math.max(3e5, Math.round(Math.max(0, cl.budget) * 0.02 / 1e5) * 1e5) : 0;
+    out.push({ id: newId('j'), clubId: cl.id, expires: game.round + 3, fee });
   }
   return out;
 }
@@ -251,6 +263,11 @@ export function takeJob(game, clubId) {
   const old = clubById(game, game.userClubId);
   const nc = clubById(game, clubId);
   if (!nc) return { ok: false, msg: 'Clube não encontrado.' };
+  const offer = c.offers.find(o => o.clubId === clubId);
+  if (!c.fired && old && offer && offer.fee) {
+    addTx(game, nc.id, `Multa rescisória do técnico (${old.name})`, -offer.fee);
+    addTx(game, old.id, `Multa rescisória: técnico saiu para o ${nc.name}`, offer.fee);
+  }
   if (!c.fired && old) {
     const L = league(game, old.id);
     const pos = standings(game, L.id).findIndex(s => s.id === old.id) + 1;

@@ -22,9 +22,31 @@ import { negotiationModal, updateNegotiation, compareModal } from './ui/market-u
 import { negotiate, askingPrice, wageAsk } from './engine/market.js';
 import { startScouting, stopScouting } from './engine/scouting.js';
 
+import * as Sound from './ui/sound.js';
+import { applyTheme } from './ui/theme.js';
+import { settingsScreen } from './ui/settings-screen.js';
+
+// Preferências de tema e som
+function loadSettings() {
+  let s = { theme: 'club', sfx: true, crowd: true, volume: 0.7 };
+  try { s = { ...s, ...JSON.parse(localStorage.getItem('brasfoot_settings') || '{}') }; } catch { /* padrão */ }
+  Sound.loadSoundSettings({ sfx: s.sfx, crowd: s.crowd, volume: s.volume });
+  return s;
+}
+function saveSettings() {
+  try { localStorage.setItem('brasfoot_settings', JSON.stringify(S.settings)); } catch { /* sem problema */ }
+  Sound.loadSoundSettings({ sfx: S.settings.sfx, crowd: S.settings.crowd, volume: S.settings.volume });
+}
+// Tema: cores do clube do usuário (ou o padrão verde-limão)
+function updateTheme() {
+  const uc = S.game && S.settings.theme !== 'default' ? S.game.clubs.find(c => c.id === S.game.userClubId) : null;
+  applyTheme(uc);
+}
+
 // Sai do modo comparação
 function endCompare() { S.compareA = null; document.getElementById('compare-bar')?.remove(); }
 import { takeJob, searchJobs } from './engine/career.js';
+import * as NC from './engine/national-coach.js';
 
 // ---------- Estado da aplicação ----------
 const S = {
@@ -38,7 +60,8 @@ const S = {
   matchRunning: false, matchSpeed: 0, matchVerbose: false, matchTab: 'campo', subOut: null,
   lastRound: null,
   pick: null,          // vaga sendo escolhida na tática
-  marketFilter: { pos: 'ALL', free: false, young: false, maxPrice: 0, q: '', league: 'ALL' }
+  marketFilter: { pos: 'ALL', free: false, young: false, maxPrice: 0, q: '', league: 'ALL' },
+  settings: loadSettings()   // tema e som (guardados no aparelho)
 };
 
 // ---------- Desenho das telas ----------
@@ -46,7 +69,7 @@ const SCREENS = {
   start: SC.startScreen, chooseClub: SC.chooseClubScreen, hub: SC.hubScreen,
   squad: SC.squadScreen, tactics: SC.tacticsScreen, table: SC.tableScreen,
   market: SC.marketScreen, finance: SC.financeScreen, more: SC.moreScreen,
-  match: matchScreen, roundSummary: roundSummaryScreen, awards: awardsScreen, career: careerScreen, nations: nationsScreen
+  match: matchScreen, roundSummary: roundSummaryScreen, awards: awardsScreen, career: careerScreen, nations: nationsScreen, settings: settingsScreen
 };
 
 // Pergunta o nome do técnico ao começar um jogo novo (devolve null se cancelar)
@@ -89,8 +112,9 @@ function render(keepScroll = false) {
   const nav = document.getElementById('nav');
   nav.classList.toggle('hidden', hideNav);
   nav.innerHTML = `<div class="inner">${NAV.map(([k, ic, l]) =>
-    `<button class="${S.screen === k || (k === 'more' && (S.screen === 'finance' || S.screen === 'awards' || S.screen === 'nations')) || (k === 'hub' && S.screen === 'career') ? 'on' : ''}" data-act="go" data-to="${k}">${icon(ic, 23)}${l}</button>`).join('')}</div>`;
+    `<button class="${S.screen === k || (k === 'more' && (S.screen === 'finance' || S.screen === 'awards' || S.screen === 'nations' || S.screen === 'settings')) || (k === 'hub' && S.screen === 'career') ? 'on' : ''}" data-act="go" data-to="${k}">${icon(ic, 23)}${l}</button>`).join('')}</div>`;
   UI.animateCounts(app, money);
+  updateTheme();
   if (keepScroll) window.scrollTo(0, y);
   // a tela da partida foi redesenhada: o animador se liga aos novos elementos
   if (S.screen === 'match' && S.anim) S.anim.attach();
@@ -155,12 +179,14 @@ function startMatchLoop() {
   S.matchRunning = true;
   S.minuteMs = SPEEDS[S.matchSpeed];
   setPauseLabel();
+  Sound.crowdStart(); // murmúrio da torcida enquanto o jogo corre
   timer = setInterval(tick, SPEEDS[S.matchSpeed]);
 }
 function stopMatchLoop() {
   clearInterval(timer); timer = null;
   clearTimeout(holdTimer); holdTimer = null;
   S.matchRunning = false; setPauseLabel();
+  Sound.crowdStop();
 }
 function holdClock(ms) {
   clearInterval(timer); timer = null;
@@ -178,6 +204,9 @@ function tick() {
   const m = S.prep.userMatch;
   const evs = m.step();
   for (const x of S.prep.matches) if (x !== m) x.step();
+  // Sons do minuto (no Campo, chute/gol/defesa tocam junto com a animação)
+  Sound.playMinute(evs, { animated: !!S.anim && (S.matchTab || 'campo') === 'campo' });
+  if (m.attackSide >= 0 && Math.random() < 0.35) Sound.crowdSwell();
   // Pausa automática no intervalo e quando um jogador seu se machuca
   const myIdx = m.teams.findIndex(t => t.club.id === S.game.userClubId);
   const half = evs.some(e => e.type === 'half');
@@ -243,6 +272,7 @@ function endMatch() {
     title = `${ul.name} · Rodada ${roundIndex + 1}`;
   }
   if (S.anim) { S.anim.destroy(); S.anim = null; }
+  Sound.crowdStop();
   const out = finishRound(S.game, S.prep);
   S.lastRound = { roundIndex, fixtures, title, seasonEnd: out.seasonEnd };
   S.prep = null;
@@ -302,6 +332,24 @@ const ACTIONS = {
   // Seleções
   nationSquad: d => UI.openModal(squadModal(S, d.id)),
 
+  // Aparência e som
+  setSetting: d => {
+    S.settings[d.k] = d.v === 'true' ? true : d.v === 'false' ? false : d.v;
+    saveSettings();
+    if (d.k === 'crowd' && !S.settings.crowd) Sound.crowdStop();
+    render(true);
+    if (d.k === 'theme') UI.toast(S.settings.theme === 'club' ? '🎨 Tema nas cores do seu clube!' : 'Tema padrão aplicado.');
+  },
+  testSound: d => { Sound.unlock(); ({ whistle: () => Sound.whistle(2), goal: Sound.goal, ooh: Sound.ooh })[d.v](); },
+  // botão de som na partida (liga/desliga tudo)
+  toggleSound: () => {
+    const on = !(S.settings.sfx || S.settings.crowd);
+    S.settings.sfx = on; S.settings.crowd = on; saveSettings();
+    if (on) { Sound.unlock(); if (S.matchRunning) Sound.crowdStart(); } else Sound.crowdStop();
+    const b = document.getElementById('mx-snd'); if (b) b.innerHTML = icon(on ? 'sound' : 'mute', 20);
+    UI.toast(on ? '🔊 Som ligado' : '🔇 Som desligado');
+  },
+
   // Carreira do técnico
   acceptJob: async d => {
     const c = S.game.clubs.find(x => x.id === d.id);
@@ -313,6 +361,21 @@ const ACTIONS = {
     go('hub');
   },
   rejectJob: d => { S.game.coach.offers = S.game.coach.offers.filter(o => o.id !== d.id); autosave(); render(true); },
+  // Seleção
+  acceptNation: async () => {
+    const c = S.game.coach;
+    if (!await UI.confirmBox(`Assumir a seleção <b>${c.natOffer.nat}</b>?<br><span class="small muted">Você continua no seu clube e acumula os dois cargos.</span>${c.nation ? `<br><span class="small warn">Você deixa a seleção ${c.nation.nat}.</span>` : ''}`, 'Assumir')) return;
+    const r = NC.acceptNation(S.game);
+    Sound.success(); UI.toast('🧢 ' + r.msg, 3500); autosave(); go('nations', { view: 'minha' });
+  },
+  rejectNation: () => { S.game.coach.natOffer = null; autosave(); render(true); },
+  leaveNation: async () => {
+    if (!await UI.confirmBox(`Deixar o cargo de técnico da seleção <b>${S.game.coach.nation.nat}</b>?`, 'Deixar')) return;
+    NC.leaveNation(S.game, 'Saiu'); autosave(); UI.toast('Você deixou a seleção.'); go('career');
+  },
+  natToggle: d => { const r = NC.natToggle(S.game, d.id); UI.toast(r.msg); autosave(); render(true); },
+  natAuto: () => { NC.natAuto(S.game); UI.toast('Convocação automática (os melhores do país).'); autosave(); render(true); },
+  natFormation: d => { NC.natFormation(S.game, d.v); autosave(); render(true); },
   searchJobs: () => {
     if (!searchJobs(S.game)) return UI.toast('Você já procurou nesta semana. Avance uma semana para novas propostas.');
     UI.toast('Novas propostas chegaram!'); autosave(); render(true);
@@ -357,7 +420,7 @@ const ACTIONS = {
   negoSend: d => {
     const p = S.game.players[d.id];
     const r = negotiate(S.game, p, S.nego.fee, S.nego.wage, S.nego.years);
-    if (r.status === 'accepted') { UI.closeModal(); UI.toast('✍️ ' + r.msg, 3500); autosave(); render(true); return; }
+    if (r.status === 'accepted') { UI.closeModal(); Sound.success(); UI.toast('✍️ ' + r.msg, 3500); autosave(); render(true); return; }
     if (r.status === 'counter') { S.nego.fee = r.counterFee; S.nego.wage = r.counterWage; }
     S.nego.msg = r.msg; S.nego.ok = false; S.nego.tries = r.triesLeft;
     UI.updateModal(negotiationModal(S, d.id, S.nego));
@@ -531,10 +594,11 @@ document.addEventListener('click', e => {
   const el = e.target.closest('[data-act]');
   if (!el || el.disabled) return;
   const fn = ACTIONS[el.dataset.act];
-  if (fn) { e.preventDefault(); UI.haptic(8); fn(el.dataset); }
+  if (fn) { e.preventDefault(); UI.haptic(8); Sound.click(); fn(el.dataset); }
 });
 // "Ondinha" no ponto tocado (botões, itens de lista, chips)
 document.addEventListener('pointerdown', e => {
+  Sound.unlock(); // o celular só libera o som depois de um toque
   // só o elemento clicável mais próximo do dedo (nunca listas ou telas inteiras)
   const el = e.target.closest('button, .item.tap, .comp-card, .podium');
   if (el && !el.disabled && !el.classList.contains('pl')) UI.rippleAt(el, e);
@@ -550,6 +614,8 @@ document.addEventListener('change', e => {
   if (k === 'awardsLeague') go('awards', { ...S.params, league: e.target.value });
   if (k === 'awardsSeason') go('awards', { ...S.params, season: e.target.value });
   if (k === 'verbose') { S.matchVerbose = e.target.checked; render(true); }
+  if (k === 'volume') { S.settings.volume = Number(e.target.value); saveSettings(); Sound.whistle(1);
+    const v = document.getElementById('vol-v'); if (v) v.textContent = Math.round(S.settings.volume * 100) + '%'; }
 });
 // Buscas (com pequena espera enquanto digita)
 let searchTimer;

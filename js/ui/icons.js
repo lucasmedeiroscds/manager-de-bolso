@@ -40,6 +40,9 @@ const P = {
   fire: '<path d="M12 3c.5 3-1.8 4.6-3 6.4C7.6 11.5 7 13 7 14.5A5 5 0 0 0 17 15c0-2.6-1.5-4.6-2.6-5.8-.2 1.5-.9 2.4-1.9 2.8.6-2.8-.2-6-.5-9z"/>',
   calendar: '<rect x="4" y="5.5" width="16" height="14.5" rx="2"/><path d="M4 10h16M8.5 3.5v4M15.5 3.5v4"/>',
   shield: '<path d="M12 3.5 19 6v5.5c0 4.3-3 7.5-7 9-4-1.5-7-4.7-7-9V6z"/>',
+  sound: '<path d="M4 9.5v5h3.5L12 18.5v-13L7.5 9.5z" fill="currentColor" stroke="none"/><path d="M15.5 9a4 4 0 0 1 0 6M18 6.5a7.5 7.5 0 0 1 0 11"/>',
+  mute: '<path d="M4 9.5v5h3.5L12 18.5v-13L7.5 9.5z" fill="currentColor" stroke="none"/><path d="M16 9.5l5 5M21 9.5l-5 5"/>',
+  palette: '<path d="M12 3.5a8.5 8.5 0 1 0 0 17c1.3 0 2-.8 2-1.8 0-1.4-1.2-1.6-1.2-2.8 0-1 .8-1.6 1.8-1.6h2.2c2.1 0 3.7-1.7 3.7-3.8C20.5 6.6 16.7 3.5 12 3.5z"/><circle cx="7.8" cy="11" r="1.2" fill="currentColor"/><circle cx="10.5" cy="7.3" r="1.2" fill="currentColor"/><circle cx="15" cy="7.6" r="1.2" fill="currentColor"/>',
   whistle: '<circle cx="9.5" cy="14" r="5"/><path d="M13 10.5 20 8v3l-5 1.5"/><circle cx="9.5" cy="14" r="1.2" fill="currentColor"/>'
 };
 

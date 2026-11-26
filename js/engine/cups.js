@@ -34,10 +34,17 @@ const CONTINENTAL = [
   { id: 'ACL', name: 'Liga dos Campeões da Ásia', conts: ['Ásia', 'Oceania'], tier: 1 },
   { id: 'CON', name: 'Copa dos Campeões da Concacaf', conts: ['América do Norte'], tier: 1 },
   { id: 'CAF', name: 'Liga dos Campeões da África', conts: ['África'], tier: 1 },
-  { id: 'SUL', name: 'Copa Sul-Americana', conts: ['América do Sul'], tier: 2, minClubs: 40 },
-  { id: 'UEL', name: 'Liga Europa', conts: ['Europa'], tier: 2, minClubs: 120 },
-  { id: 'UECL', name: 'Liga Conferência', conts: ['Europa'], tier: 3, minClubs: 200 }
+  { id: 'SUL', name: 'Copa Sul-Americana', conts: ['América do Sul'], tier: 2 },
+  { id: 'UEL', name: 'Liga Europa', conts: ['Europa'], tier: 2 }
 ];
+// SISTEMA DE VAGAS (igual para todas as ligas de 1ª divisão):
+//   1º ao 4º  → copa continental principal (Libertadores, Liga dos Campeões...)
+//   5º ao 10º → copa continental secundária (Sul-Americana, Liga Europa),
+//               onde ela existir
+//   1º ao 8º  → entram direto nas oitavas da copa nacional
+export const SLOTS = { tier1: 4, tier2: 6, nationalSeeds: 8 };
+const TIER_RANGE = { 1: [0, SLOTS.tier1], 2: [SLOTS.tier1, SLOTS.tier1 + SLOTS.tier2] };
+const W_QUAL = [0, 1, 3];                            // fases preliminares das continentais
 
 // Calendário (para temporada de 38 semanas; ajustado proporcionalmente)
 const W_NATIONAL = [2, 7, 13, 19, 25, 31];          // até 6 fases
@@ -101,59 +108,59 @@ export function createCups(game) {
     if (l.clubIds.length < 4 || l.tier === 2) continue;
     // Copa nacional: clubes da 1ª e (se existir) da 2ª divisão do país
     const lower = game.leagues.find(x => x.id === l.lowerId);
-    const ranking = leagueRanking(game, l).concat(lower ? leagueRanking(game, lower) : []);
+    const top = leagueRanking(game, l);
+    const ranking = top.concat(lower ? leagueRanking(game, lower) : []);
     const cup = {
       id: 'N-' + l.id, type: 'national', leagueId: l.id, country: l.country,
       name: NATIONAL_NAMES[l.country] || `Copa nacional (${l.country})`,
-      teams: ranking.slice(), groups: [], rounds: [], champion: null, runnerUp: null
+      teams: ranking.slice(), groups: [], rounds: [], champion: null, runnerUp: null, entries: []
     };
-    // Fase preliminar se não for potência de 2
     const n = cup.teams.length;
-    const P = Math.pow(2, Math.floor(Math.log2(n)));
-    const nStages = Math.log2(P) + (n > P ? 1 : 0);
+    // Os 8 primeiros da liga entram direto nas oitavas (se houver clubes suficientes)
+    const seeds = n >= 24 ? top.slice(0, SLOTS.nationalSeeds) : [];
+    const others = ranking.filter(id => !seeds.includes(id));
+    const m = others.length;
+    const base = seeds.length ? 8 : 1;
+    const Q = base * Math.pow(2, Math.floor(Math.log2(m / base)));   // potência de 2
+    const pre = m > Q ? 1 : 0;                                         // precisa de fase preliminar?
+    const before = pre + Math.round(Math.log2(Q / base));             // fases antes de os cabeças entrarem
+    const nStages = before + (seeds.length ? 4 : 0);
     const weeks = wn.slice(Math.max(0, wn.length - nStages));
     while (weeks.length < nStages) weeks.unshift(Math.max(0, weeks[0] - 2));
     cup.weeks = weeks;
-    if (n > P) {
-      const playIn = shuffle(ranking.slice(n - 2 * (n - P)));      // os mais fracos
-      cup.byes = ranking.slice(0, n - 2 * (n - P));                 // entram na fase seguinte
-      cup.rounds.push(makeRound('Fase preliminar', weeks[0], pairs(playIn)));
+    const skip = pre ? others.slice(0, 2 * Q - m) : [];               // os melhores pulam a preliminar
+    if (pre) {
+      cup.rounds.push(makeRound('Fase preliminar', weeks[0], pairs(shuffle(others.slice(2 * Q - m)))));
+      if (skip.length) cup.entries.push({ at: 1, ids: skip });
     } else {
-      cup.byes = [];
-      cup.rounds.push(makeRound(stageName(P), weeks[0], pairs(shuffle(ranking))));
+      cup.rounds.push(makeRound(seeds.length ? '1ª fase' : stageName(Q), weeks[0], pairs(shuffle(others))));
     }
+    if (seeds.length) cup.entries.push({ at: before, ids: seeds });
+    cup.byes = skip.concat(seeds);
     cups.push(cup);
   }
 
   // 2) Continentais
   const wg = scaleWeeks(W_GROUPS, T), wk = scaleWeeks(W_KO, T);
-  const taken = new Set(); // um clube joga só uma copa continental por temporada
+  const wq = scaleWeeks(W_QUAL, T);
   for (const def of CONTINENTAL.slice().sort((a, b) => a.tier - b.tier)) {
     const leagues = game.leagues.filter(l => def.conts.includes(l.continent) && l.clubIds.length >= 4 && l.tier !== 2);
-    const clubs = leagues.reduce((s, l) => s + l.clubIds.length, 0);
-    if (!leagues.length || clubs < Math.max(16, def.minClubs || 0)) continue;
-    if (def.tier > 1 && !cups.some(c => c.type === 'continental' && c.conts.join() === def.conts.join())) continue;
-    const size = clubs >= 120 && leagues.length >= 6 ? 32 : 16;
-    const slots = allocateSlots(game, leagues, size);
+    if (!leagues.length) continue;
+    const [from, to] = TIER_RANGE[def.tier];
     const teams = [];
-    leagues.forEach((l, i) => teams.push(...leagueRanking(game, l).filter(id => !taken.has(id)).slice(0, slots[i])));
-    teams.forEach(id => taken.add(id));
+    for (const l of leagues) teams.push(...leagueRanking(game, l).slice(from, to));
     if (teams.length < 8) continue;
-    // Arredonda para múltiplo de 4
-    const usable = teams.slice(0, Math.floor(teams.length / 4) * 4);
-    const nGroups = usable.length / 4;
-    const groups = drawGroups(game, usable, nGroups);
+    // Grupos de 4 (2, 4 ou 8 grupos); os que sobram jogam fases preliminares
+    let G = 2;
+    while (G < 8 && 4 * G * 2 <= teams.length) G *= 2;
     const cup = {
       id: def.id, type: 'continental', name: def.name, conts: def.conts, tier: def.tier,
-      teams: usable, groups: groups.map((ids, gi) => {
-        const fx = groupFixtures(ids);
-        return { name: String.fromCharCode(65 + gi), clubIds: ids, fixtures: fx.map((round, r) => round.map(f => ({ ...f, week: wg[r] }))) };
-      }),
-      rounds: [], champion: null, runnerUp: null
+      teams: teams.slice(), groups: [], rounds: [], byes: [], champion: null, runnerUp: null,
+      target: 4 * G, qualWeeks: wq, groupWeeks: wg
     };
     // Semanas do mata-mata: as últimas da lista conforme o número de fases
-    const koStages = Math.log2(nGroups * 2);
-    cup.koWeeks = wk.slice(wk.length - koStages);
+    cup.koWeeks = wk.slice(wk.length - Math.log2(G * 2));
+    advanceQual(game, cup, teams);
     cups.push(cup);
   }
   game.cups = cups;
@@ -161,6 +168,41 @@ export function createCups(game) {
 }
 
 function makeRound(name, week, ties) { return { name, week, ties }; }
+
+// Continental: fases preliminares (os mais fracos se enfrentam) até sobrar
+// o número certo de clubes para os grupos; aí sorteia os grupos
+function advanceQual(game, cup, pool) {
+  const n = pool.length, target = cup.target;
+  if (n <= target) {
+    const ids = pool.slice(0, target);
+    cup.groups = drawGroups(game, ids, ids.length / 4).map((gids, gi) => {
+      const fx = groupFixtures(gids);
+      return { name: String.fromCharCode(65 + gi), clubIds: gids, fixtures: fx.map((round, r) => round.map(f => ({ ...f, week: cup.groupWeeks[r] }))) };
+    });
+    cup.byes = [];
+    return;
+  }
+  const k = Math.min(n - target, Math.floor(n / 2));
+  const sorted = pool.slice().sort((a, b) => clubById(game, b).rep - clubById(game, a).rep);
+  const qi = cup.rounds.length;
+  const week = cup.qualWeeks[qi] != null ? cup.qualWeeks[qi] : Math.max(0, cup.groupWeeks[0] - 1);
+  cup.byes = sorted.slice(0, n - 2 * k);
+  cup.rounds.push({ ...makeRound(qi ? `${qi + 1}ª fase preliminar` : 'Fase preliminar', week, pairs(shuffle(sorted.slice(n - 2 * k)))), qual: true });
+}
+
+// Faixas de vaga de uma liga (para colorir a tabela)
+export function qualZones(game, leagueId) {
+  const l = game.leagues.find(x => x.id === leagueId);
+  if (!l || l.tier === 2 || l.clubIds.length < 4) return null;
+  const defs = CONTINENTAL.filter(d => d.conts.includes(l.continent));
+  const t1 = defs.find(d => d.tier === 1), t2 = defs.find(d => d.tier === 2);
+  const natCup = (game.cups || []).find(c => c.type === 'national' && c.leagueId === l.id);
+  return {
+    t1: t1 ? { n: SLOTS.tier1, name: t1.name } : null,
+    t2: t2 ? { n: SLOTS.tier2, name: t2.name } : null,
+    nat: natCup && natCup.teams.length >= 24 ? { n: SLOTS.nationalSeeds, name: natCup.name } : null
+  };
+}
 function pairs(ids) {
   const out = [];
   for (let i = 0; i + 1 < ids.length; i += 2) out.push(rnd() < 0.5 ? { h: ids[i], a: ids[i + 1] } : { h: ids[i + 1], a: ids[i] });
@@ -228,8 +270,20 @@ export function processCups(game) {
   const msgs = [];
   for (const cup of game.cups || []) {
     if (cup.champion) continue;
+    // Fases preliminares da continental
+    if (cup.type === 'continental' && !cup.groups.length) {
+      const q = cup.rounds[cup.rounds.length - 1];
+      if (!q || !q.ties.every(f => f.r)) continue;
+      const w = q.ties.map(f => f.r.winner), lo = q.ties.map(f => f.r.winner === f.h ? f.a : f.h);
+      if (lo.includes(game.userClubId)) msgs.push(`❌ Você caiu na ${q.name.toLowerCase()} da ${cup.name}.`);
+      advanceQual(game, cup, cup.byes.concat(w));
+      const gg = cup.groups.find(x => x.clubIds.includes(game.userClubId));
+      if (gg) msgs.push(`🎲 ${cup.name}: você caiu no Grupo ${gg.name}.`);
+      continue;
+    }
+    const koRounds = cup.rounds.filter(r => !r.qual);
     // Fim dos grupos → monta o mata-mata
-    if (cup.type === 'continental' && !cup.rounds.length && cup.groups.every(g => g.fixtures.every(r => r.every(f => f.r)))) {
+    if (cup.type === 'continental' && !koRounds.length && cup.groups.length && cup.groups.every(g => g.fixtures.every(r => r.every(f => f.r)))) {
       const tables = cup.groups.map(groupTable);
       const winners = tables.map(t => t[0].id), runners = tables.map(t => t[1].id);
       const ties = winners.map((w, i) => ({ h: w, a: runners[(i + 1) % runners.length] }));
@@ -238,6 +292,7 @@ export function processCups(game) {
       if (tables.some(t => t.slice(0, 2).some(s => s.id === game.userClubId))) msgs.push(`✅ Você se classificou para o mata-mata da ${cup.name}!`);
       else if (cup.teams.includes(game.userClubId)) msgs.push(`❌ Você foi eliminado na fase de grupos da ${cup.name}.`);
     }
+    if (cup.type === 'continental' && !cup.rounds.some(r => !r.qual)) continue; // grupos em andamento
     const last = cup.rounds[cup.rounds.length - 1];
     if (!last || !last.ties.every(f => f.r)) continue;
     const winners = last.ties.map(f => f.r.winner);
@@ -253,23 +308,32 @@ export function processCups(game) {
     }
     // Próxima fase
     let next = winners.slice();
-    if (cup.byes && cup.byes.length) {
+    const idx = cup.type === 'continental' ? cup.rounds.filter(r => !r.qual).length : cup.rounds.length;
+    const later = (cup.entries || []).some(e => e.at > idx);
+    if (cup.entries) {
+      // quem passou direto (os melhores da liga) entra agora
+      for (const e of cup.entries.filter(x => x.at === idx)) {
+        next = next.concat(e.ids);
+        cup.byes = (cup.byes || []).filter(id => !e.ids.includes(id));
+      }
+      next = shuffle(next);
+    } else if (cup.byes && cup.byes.length) {
       // quem passou direto entra agora
       next = shuffle(cup.byes.concat(winners));
       cup.byes = [];
     } else if (cup.type === 'national' || cup.type === 'world') next = shuffle(next);
-    const idx = cup.rounds.length;
     const week = cup.type === 'continental' ? cup.koWeeks[idx] : cup.weeks[idx];
     const ties = [];
     for (let i = 0; i + 1 < next.length; i += 2) {
       // continental: mando do melhor (sorteio entre vencedores)
       ties.push(rnd() < 0.5 ? { h: next[i], a: next[i + 1] } : { h: next[i + 1], a: next[i] });
     }
-    cup.rounds.push(makeRound(stageName(ties.length * 2), week, ties));
+    const rname = later ? `${idx + 1}ª fase` : stageName(ties.length * 2);
+    cup.rounds.push(makeRound(rname, week, ties));
     const mine = ties.find(t => t.h === game.userClubId || t.a === game.userClubId);
     if (mine) {
       const opp = clubById(game, mine.h === game.userClubId ? mine.a : mine.h);
-      msgs.push(`🎯 ${cup.name} — ${stageName(ties.length * 2)}: você enfrenta o ${opp.name} na semana ${week + 1}.`);
+      msgs.push(`🎯 ${cup.name} — ${rname}: você enfrenta o ${opp.name} na semana ${week + 1}.`);
     }
   }
   // Mundial de Clubes: quando todas as continentais terminarem
@@ -324,10 +388,10 @@ export function cupStatus(game, clubId) {
       const byes = cup.byes && cup.byes.includes(clubId);
       if (outKo) status = 'Eliminado';
       else if (inKo) status = ko.name;
-      else if (byes) status = 'Aguardando a próxima fase';
+      else if (byes) status = cup.type === 'national' ? 'Entra direto numa fase seguinte' : 'Classificado direto para os grupos';
       else if (cup.groups.length) {
         const g = cup.groups.find(x => x.clubIds.includes(clubId));
-        if (cup.rounds.length) status = 'Eliminado na fase de grupos';
+        if (cup.rounds.some(r => !r.qual)) status = 'Eliminado na fase de grupos';
         else {
           const t = groupTable(g);
           status = t.every(s => s.j === 0) ? `Grupo ${g.name} (começa na semana ${g.fixtures[0][0].week + 1})`

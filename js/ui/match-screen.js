@@ -190,7 +190,8 @@ export function matchScreen(S) {
       : `<button id="mx-pause" data-act="matchPause" class="${S.matchRunning ? '' : 'primary'}">${pauseLabel(S.matchRunning)}</button>
          <button data-act="matchSpeed">${icon('fast', 20)}${['1x', '2x', '4x'][S.matchSpeed]}</button>
          <button data-act="matchTactics">${icon('target', 20)}Tática</button>
-         <button data-act="matchSkip">${icon('skip', 20)}Fim</button>`}
+         <button data-act="matchSkip">${icon('skip', 20)}Fim</button>
+         <button class="snd" id="mx-snd" data-act="toggleSound" aria-label="Som">${icon(S.settings && (S.settings.sfx || S.settings.crowd) ? 'sound' : 'mute', 20)}</button>`}
   </div></div>`;
 }
 

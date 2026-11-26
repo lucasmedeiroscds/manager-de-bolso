@@ -5,6 +5,7 @@ import { esc } from '../util.js';
 import { overall } from '../engine/ratings.js';
 import { nationRanking, natInfo, tournamentsAfter } from '../engine/nations.js';
 import { clubById } from '../engine/market.js';
+import { FORMATIONS } from '../engine/tactics.js';
 import { posTag, ovrTag } from './ui.js';
 import { icon } from './icons.js';
 import { flag } from './screens.js';
@@ -17,7 +18,8 @@ export function natBadge(nat, size = '') {
 
 let cache = { key: '', list: [] };
 function ranking(g) {
-  const key = `${g.season}-${g.round}-${Object.keys(g.players).length}`;
+  const un = g.coach && g.coach.nation;
+  const key = `${g.season}-${g.round}-${Object.keys(g.players).length}-${un ? un.nat + un.squad.join(',') : ''}`;
   if (cache.key !== key) cache = { key, list: nationRanking(g) };
   return cache.list;
 }
@@ -25,7 +27,9 @@ function ranking(g) {
 export function nationsScreen(S) {
   const g = S.game;
   const view = S.params.view || 'ranking';
+  const un = g.coach && g.coach.nation;
   const tabs = `<div class="tabs">
+    ${un ? `<button class="${view === 'minha' ? 'on' : ''}" data-act="go" data-to="nations" data-view="minha">${icon('whistle', 16)} Minha</button>` : ''}
     <button class="${view === 'ranking' ? 'on' : ''}" data-act="go" data-to="nations" data-view="ranking">${icon('globe', 16)} Ranking</button>
     <button class="${view === 'torneios' ? 'on' : ''}" data-act="go" data-to="nations" data-view="torneios">${icon('trophy', 16)} Torneios</button>
   </div>`;
@@ -39,6 +43,7 @@ export function nationsScreen(S) {
     <div class="card mt" style="display:flex;gap:10px;align-items:center">${icon('calendar', 20)}<div class="small"><b>Próximo torneio</b><div class="muted">${esc(next)}</div></div></div>${tabs}`;
 
   if (view === 'torneios') return head + tournamentsView(S);
+  if (view === 'minha' && un) return head + myNationView(S, next);
   const list = ranking(g).slice(0, 48);
   const mine = id => clubById(g, g.userClubId) && Object.values(g.players).filter(p => p.clubId === g.userClubId).map(p => p.id);
   const myIds = new Set(mine() || []);
@@ -66,6 +71,42 @@ export function squadModal(S, nat) {
     return `<div class="item ${p.clubId === g.userClubId ? 'me' : ''}" style="min-height:48px">${posTag(p.pos)}
       <div class="grow"><b class="small">${esc(p.name)}</b><div class="tiny muted">${c ? esc(c.name) : ''} · ${p.age}a</div></div>${ovrTag(overall(p))}</div>`;
   }).join('')}</div>`;
+}
+
+// Seleção treinada pelo usuário: convocação manual e formação
+function myNationView(S, next) {
+  const g = S.game, un = g.coach.nation;
+  const list = ranking(g);
+  const pos = list.findIndex(x => x.nat === un.nat);
+  const me = list[pos];
+  const squad = me ? me.squad : [];
+  const inSq = new Set(squad.map(p => p.id));
+  const order = { GOL: 0, ZAG: 1, LAT: 2, VOL: 3, MEI: 4, ATA: 5 };
+  const sorted = squad.slice().sort((a, b) => order[a.pos] - order[b.pos] || overall(b) - overall(a));
+  const others = Object.values(g.players).filter(p => p.nat === un.nat && p.clubId && !inSq.has(p.id))
+    .sort((a, b) => overall(b) - overall(a)).slice(0, 30);
+  const row = (p, on) => {
+    const c = clubById(g, p.clubId);
+    return `<div class="item ${p.clubId === g.userClubId ? 'me' : ''}" style="min-height:50px">${posTag(p.pos)}
+      <div class="grow"><b class="small">${esc(p.name)}</b><div class="tiny muted">${c ? esc(c.name) : ''} · ${p.age}a${p.injury > 1 ? ' · <span class="bad">lesionado</span>' : ''}</div></div>${ovrTag(overall(p))}
+      <button class="btn-sm ${on ? '' : 'btn-good'}" data-act="natToggle" data-id="${p.id}" style="margin-left:6px">${on ? 'Tirar' : 'Chamar'}</button></div>`;
+  };
+  const count = k => squad.filter(p => k.includes(p.pos)).length;
+  const hist = un.history || [];
+  return `<div class="card hl"><div class="row" style="gap:12px">${natBadge(un.nat, 'lg')}<div class="grow">
+      <div class="tiny muted">VOCÊ É O TÉCNICO DA SELEÇÃO</div><h2 style="margin:0">${flag(un.nat)} ${esc(un.nat)}</h2>
+      <div class="small muted">${pos >= 0 ? `${pos + 1}º no ranking · força ${me.str.toFixed(1)}` : ''} · desde ${un.since}</div></div></div>
+    <p class="small mt" style="margin-bottom:0">${icon('calendar', 14)} ${esc(next)}</p>
+    ${hist.length ? `<div class="small mt">${hist.map(h => `<div>${h.year} · ${esc(h.name)}: <b>${esc(h.stage)}</b></div>`).join('')}</div>` : ''}
+  </div>
+  <div class="section-title"><h3>Formação</h3></div>
+  <div class="chips">${['4-4-2', '4-3-3', '4-2-3-1', '3-5-2', '5-3-2', '4-5-1'].filter(f => FORMATIONS[f]).map(f => `<button class="chip ${un.formation === f ? 'on' : ''}" data-act="natFormation" data-v="${f}">${f}</button>`).join('')}</div>
+  <div class="section-title"><h3>Convocados (${squad.length}/26)</h3><button class="btn-sm" data-act="natAuto">Automática</button></div>
+  <p class="tiny muted">${un.squad.length ? 'Convocação sua.' : 'Convocação automática: os melhores do país. Toque em Tirar/Chamar para montar a sua.'} GOL ${count(['GOL'])} · DEF ${count(['ZAG', 'LAT'])} · MEI ${count(['VOL', 'MEI'])} · ATA ${count(['ATA'])}. Jogadores lesionados ou sem clube saem na hora do torneio.</p>
+  <div class="list">${sorted.map(p => row(p, true)).join('')}</div>
+  <div class="section-title"><h3>Outros jogadores de ${esc(un.nat)}</h3></div>
+  <div class="list">${others.map(p => row(p, false)).join('') || '<p class="small muted">Ninguém disponível.</p>'}</div>
+  <button class="btn-block btn-sm mt" data-act="leaveNation">Deixar a seleção</button>`;
 }
 
 function tournamentsView(S) {
@@ -98,6 +139,7 @@ export function nationalsBlock(list) {
   if (!list || !list.length) return '';
   return `<div class="card">${list.map(t => `<div class="row" style="gap:10px;margin:6px 0">${natBadge(t.champion, 'lg')}
     <div class="grow"><div class="tiny muted">${esc(t.name.toUpperCase())} ${t.year}</div><b style="font-size:17px">🏆 ${esc(t.champion)}</b>
-    <div class="small muted">vice: ${esc(t.runnerUp)}${t.best ? ` · craque: ${esc(t.best.name)}` : ''}${t.userCalled ? ` · ${t.userCalled} do seu clube convocados` : ''}</div></div></div>`).join('')}
+    <div class="small muted">vice: ${esc(t.runnerUp)}${t.best ? ` · craque: ${esc(t.best.name)}` : ''}${t.userCalled ? ` · ${t.userCalled} do seu clube convocados` : ''}</div>
+    ${t.userNation ? `<div class="small" style="margin-top:4px">🧢 Sua seleção (${esc(t.userNation.nat)}): <b>${esc(t.userNation.stage)}</b> · reputação <b class="${t.userNation.delta >= 0 ? 'good' : 'bad'}">${t.userNation.delta >= 0 ? '+' : ''}${t.userNation.delta}</b>${t.userNation.fired ? ' · <span class="bad">demitido</span>' : ''}</div>` : ''}</div></div>`).join('')}
     <button class="btn-block btn-sm mt" data-act="go" data-to="nations" data-view="torneios">Ver torneios de seleções</button></div>`;
 }
