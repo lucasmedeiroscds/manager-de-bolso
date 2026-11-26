@@ -57,7 +57,7 @@ function playerDot(S, m, t, f, xy, bottom) {
   const sel = S.subOut === f.id;
   const y = t.yellows[f.id] ? '🟨' : '';
   const inj = f.injured ? '🚑' : '';
-  const mine = t.club.id === S.game.userClubId;
+  const mine = t.club.id === S.game.userClubId && !m.pcId;
   return `<div class="pl ${bottom ? 'pl-me' : ''} ${sel ? 'sel' : ''}" style="left:${xy.x}%;top:${xy.y}%" data-pid="${f.id}" ${mine ? `data-act="pitchPick" data-id="${f.id}"` : ''}>
     <span class="shirt" style="--c1:${esc(t.club.colors[0])};--c2:${esc(t.club.colors[1])}">${f.slot}</span>
     <span class="nm">${inj}${y}${esc(surname(p.name))}</span>
@@ -131,7 +131,7 @@ function feedHTML(S, m) {
 
 // Botões de instrução ao vivo (postura do time)
 function instrHTML(S, m) {
-  if (m.finished) return '';
+  if (m.finished || m.pcId) return '';
   const side = m.teams.findIndex(t => t.club.id === S.game.userClubId);
   const cur = m.instr[side];
   const ic = { normal: 'target', pressao: 'fire', contra: 'bolt', segurar: 'shield', tudo: 'star' };
@@ -165,7 +165,7 @@ function scorersLine(t) {
 }
 
 function lastBigEvent(m, skipGoal) {
-  const e = [...m.events].reverse().find(x => !(skipGoal && (x.type === 'goal' || x.min === m.minute && x.type === 'color')) && ['goal', 'red', 'yellow', 'injury', 'sub', 'save', 'half', 'end', 'info', 'pen', 'color', 'talk', 'play', 'instr', 'chance'].includes(x.type));
+  const e = [...m.events].reverse().find(x => !(skipGoal && (x.type === 'goal' || x.min === m.minute && x.type === 'color')) && ['goal', 'red', 'yellow', 'injury', 'sub', 'save', 'half', 'end', 'info', 'pen', 'color', 'talk', 'play', 'instr', 'chance', 'tackle', 'pcmoment'].includes(x.type));
   return e ? `<span class="m">${e.min}'</span> ${esc(e.text)}` : '';
 }
 
@@ -204,7 +204,7 @@ export function matchScreen(S) {
       ? `<button class="btn-main" data-act="endMatch">Continuar ${icon('chevron', 20)}</button>`
       : `<button id="mx-pause" data-act="matchPause" class="${S.matchRunning ? '' : 'primary'}">${pauseLabel(S.matchRunning)}</button>
          <button data-act="matchSpeed">${icon('fast', 20)}${['1x', '2x', '4x'][S.matchSpeed]}</button>
-         <button data-act="matchTactics">${icon('target', 20)}Tática</button>
+         ${m.pcId ? '' : `<button data-act="matchTactics">${icon('target', 20)}Tática</button>`}
          <button data-act="matchSkip">${icon('skip', 20)}Fim</button>
          <button class="snd" id="mx-snd" data-act="toggleSound" aria-label="Som">${icon(S.settings && (S.settings.sfx || S.settings.crowd) ? 'sound' : 'mute', 20)}</button>`}
   </div></div>`;
@@ -413,4 +413,38 @@ export function roundSummaryScreen(S) {
   </div>` : ''}
   <button class="btn-main mt" data-act="go" data-to="hub">Continuar ›</button>
   <button class="btn-block mt" data-act="go" data-to="table">Ver tabela</button>`;
+}
+
+// ---------- Disputa de pênaltis (cobrança a cobrança) ----------
+// last: resultado da cobrança que acabou de acontecer (para animar)
+export function penModal(S, last) {
+  const m = S.prep.userMatch, sh = m.pso;
+  const me = m.teams.findIndex(t => t.club.id === S.game.userClubId);
+  const row = i => {
+    const t = m.teams[i], k = sh.marks[i];
+    const dots = Array.from({ length: Math.max(5, k.length) }, (_, j) =>
+      `<i class="${j < k.length ? (k[j] ? 'ok' : 'no') : ''}"></i>`).join('');
+    return `<div class="pk-row ${i === me ? 'me' : ''}">${badge(t.club)}<b class="ellipsis">${esc(t.club.short)}</b><span class="pk-dots">${dots}</span><b class="pk-n">${sh.score[i]}</b></div>`;
+  };
+  const LBL = ['Esquerda', 'Meio', 'Direita'];
+  let prompt;
+  if (sh.done) {
+    const won = sh.score[me] > sh.score[1 - me];
+    prompt = `<div class="pk-msg ${won ? 'good' : 'bad'}">${won ? '🏆 Classificado nos pênaltis!' : '😞 Eliminado nos pênaltis.'}</div>
+      <button class="btn-main mt" data-act="penEnd">Continuar ${icon('chevron', 20)}</button>`;
+  } else {
+    const side = sh.next, mine = side === me;
+    const who = mine ? m.penKicker(side).name : m.penKicker(side).name + ' (' + m.teams[side].club.short + ')';
+    prompt = `<p class="center small">${mine ? `⚽ Cobrança de <b>${esc(who)}</b>. Onde chutar?` : `🧤 Vai bater: <b>${esc(who)}</b>. Para onde o goleiro pula?`}</p>
+      <div class="pk-btns">${LBL.map((l, d) => `<button data-act="penPick" data-v="${d}">${l}</button>`).join('')}</div>`;
+  }
+  const res = last ? `<div class="pk-res ${last.ok ? 'good' : 'bad'}">${last.ok ? 'GOL!' : last.how === 'save' ? 'DEFENDEU!' : 'PRA FORA!'}</div>` : '';
+  return `<h2 class="center" style="margin-top:0">Pênaltis</h2>
+    ${row(0)}${row(1)}
+    <div class="pk" id="pk" ${last ? `data-dir="${last.dir}" data-dive="${last.dive}" data-how="${last.how}"` : ''}>
+      <div class="pk-goal"><i class="pk-net"></i></div>
+      <div class="pk-gk"></div><div class="pk-ball"></div>${res}
+    </div>
+    ${last ? `<p class="center tiny muted">${esc(last.name)} ${last.ok ? 'converte' : last.how === 'save' ? `para em ${esc(last.keeper)}` : 'manda para fora'}.</p>` : ''}
+    <div id="pk-prompt" ${last ? 'class="pk-wait"' : ''}>${prompt}</div>`;
 }

@@ -8,16 +8,21 @@ import { createGame, userClub, userLeague, prepareRound, finishRound, nextUserMa
 import { FORMATIONS, autoLineup } from './engine/tactics.js';
 import { overall, marketValue } from './engine/ratings.js';
 import { INSTR } from './engine/match.js';
+import { talkToPlayer } from './engine/morale.js';
+import { signSponsor, startExpansion, EXPANSIONS, expansionCost } from './engine/stadium.js';
 import { buyPlayer, loanIn, loanOut, renewContract, releasePlayer, acceptOffer, rejectOffer } from './engine/market.js';
 import { saveGame, loadGame, downloadFile, pickFile, migrate, saveCustomDB, loadCustomDB } from './storage.js';
 import { clamp, money } from './util.js';
 import * as UI from './ui/ui.js';
 import * as SC from './ui/screens.js';
-import { matchScreen, patchMatch, fieldSignature, matchTacticsModal, roundSummaryScreen, pauseLabel, talkModal } from './ui/match-screen.js';
+import { matchScreen, patchMatch, fieldSignature, matchTacticsModal, roundSummaryScreen, pauseLabel, talkModal, penModal } from './ui/match-screen.js';
 import { awardsScreen } from './ui/awards-screen.js';
 import { PitchAnimator } from './ui/pitch-anim.js';
 import { icon } from './ui/icons.js';
 import { careerScreen } from './ui/career-screen.js';
+import { recordsScreen } from './ui/records-screen.js';
+import { newPlayerScreen, pcareerScreen, pcMomentModal } from './ui/player-career-screen.js';
+import * as PC from './engine/player-career.js';
 import { nationsScreen, squadModal } from './ui/nations-screen.js';
 import { negotiationModal, updateNegotiation, compareModal } from './ui/market-ui.js';
 import { negotiate, askingPrice, wageAsk } from './engine/market.js';
@@ -72,7 +77,7 @@ const SCREENS = {
   start: SC.startScreen, chooseClub: SC.chooseClubScreen, hub: SC.hubScreen,
   squad: SC.squadScreen, tactics: SC.tacticsScreen, table: SC.tableScreen,
   market: SC.marketScreen, finance: SC.financeScreen, more: SC.moreScreen,
-  match: matchScreen, roundSummary: roundSummaryScreen, awards: awardsScreen, career: careerScreen, nations: nationsScreen, settings: settingsScreen
+  match: matchScreen, roundSummary: roundSummaryScreen, awards: awardsScreen, records: recordsScreen, newPlayer: newPlayerScreen, pcareer: pcareerScreen, career: careerScreen, nations: nationsScreen, settings: settingsScreen
 };
 
 // Pergunta o nome do técnico ao começar um jogo novo (devolve null se cancelar)
@@ -99,7 +104,11 @@ const NAV = [
   ['hub', 'home', 'Início'], ['squad', 'squad', 'Elenco'], ['tactics', 'tactics', 'Tática'],
   ['table', 'trophy', 'Tabela'], ['market', 'market', 'Mercado'], ['more', 'menu', 'Mais']
 ];
-const NO_NAV = ['start', 'chooseClub', 'match', 'roundSummary'];
+const NAV_PC = [
+  ['hub', 'home', 'Início'], ['pcareer', 'whistle', 'Carreira'], ['squad', 'squad', 'Elenco'],
+  ['table', 'trophy', 'Tabela'], ['more', 'menu', 'Mais']
+];
+const NO_NAV = ['start', 'chooseClub', 'newPlayer', 'match', 'roundSummary'];
 
 let lastRendered = '';
 function render(keepScroll = false) {
@@ -114,7 +123,7 @@ function render(keepScroll = false) {
   app.classList.toggle('no-nav', hideNav);
   const nav = document.getElementById('nav');
   nav.classList.toggle('hidden', hideNav);
-  nav.innerHTML = `<div class="inner">${NAV.map(([k, ic, l]) =>
+  nav.innerHTML = `<div class="inner">${(PC.isPlayerMode(S.game) ? NAV_PC : NAV).map(([k, ic, l]) =>
     `<button class="${S.screen === k || (k === 'more' && (S.screen === 'finance' || S.screen === 'awards' || S.screen === 'nations' || S.screen === 'settings')) || (k === 'hub' && S.screen === 'career') ? 'on' : ''}" data-act="go" data-to="${k}">${icon(ic, 23)}${l}</button>`).join('')}</div>`;
   UI.animateCounts(app, money);
   updateTheme();
@@ -203,6 +212,13 @@ function setPauseLabel() {
   if (b) { b.innerHTML = pauseLabel(S.matchRunning); b.classList.toggle('primary', !S.matchRunning); }
 }
 
+function matchOver() {
+  stopMatchLoop();
+  S.subOut = null;
+  for (const x of S.prep.matches) x.runToEnd();
+  render(true);
+}
+
 function tick() {
   const m = S.prep.userMatch;
   const evs = m.step();
@@ -217,17 +233,27 @@ function tick() {
   const myIdx = m.teams.findIndex(t => t.club.id === S.game.userClubId);
   const half = evs.some(e => e.type === 'half');
   const hurt = evs.some(e => e.type === 'injury' && e.side === myIdx);
-  if (half || hurt) {
+  if (PC.isPlayerMode(S.game) && m.pcPending) {
+    stopMatchLoop();
+    patchMatch(S, evs);
+    Sound.crowdSwell(1.2);
+    setTimeout(() => UI.openModal(pcMomentModal(S)), 350);
+    return;
+  }
+  if ((half || hurt) && !PC.isPlayerMode(S.game)) {
     stopMatchLoop();
     if (half) setTimeout(() => UI.openModal(talkModal(S, 'half')), 400); // conversa no intervalo
     else UI.toast('Jogador machucado! Toque nele no campo para trocar.');
   }
-  if (m.finished) {
+  // Empate no mata-mata: disputa de pênaltis cobrança a cobrança
+  if (m.penPending) {
     stopMatchLoop();
     S.subOut = null;
-    for (const x of S.prep.matches) x.runToEnd();
-    return render(true);
+    patchMatch(S, evs);
+    setTimeout(() => UI.openModal(penModal(S)), 600);
+    return;
   }
+  if (m.finished) return matchOver();
   // Lance de perigo: tempo extra para a animação
   const big = evs.some(e => e.type === 'goal' || e.type === 'save' || e.type === 'chance');
   const isGoal = evs.some(e => e.type === 'goal');
@@ -261,6 +287,7 @@ function playRound() {
   lastSig = fieldSignature(S.prep.userMatch);
   // Preleção antes do apito inicial (o jogo começa depois da escolha)
   setPauseLabel();
+  if (PC.isPlayerMode(S.game)) { S.prep.userMatch.pcLive = true; startMatchLoop(); return; }
   UI.openModal(talkModal(S, 'pre'));
 }
 
@@ -488,6 +515,14 @@ const ACTIONS = {
   setFormation: d => { const uc = userClub(S.game); uc.formation = d.v; autoLineup(S.game, uc); render(true); },
   setTactic: d => { userClub(S.game)[d.k] = d.v; render(true); },
   autoLineup: () => { autoLineup(S.game, userClub(S.game)); UI.toast('Escalação automática feita.'); render(true); },
+  talkPlayer: d => { const r = talkToPlayer(S.game, d.id, d.v); UI.toast((r.ok ? '👍 ' : '👎 ') + r.text, 3500); autosave(); UI.updateModal(SC.playerModal(S, d.id)); },
+  signSponsor: d => { const o = signSponsor(S.game, userClub(S.game), d.v); if (o) UI.toast(`🤝 Contrato assinado com ${o.name}!`); autosave(); render(true); },
+  expandStadium: async d => {
+    const uc = userClub(S.game), e = EXPANSIONS[d.v];
+    if (!(await UI.confirmBox(`${e.label}: +${e.seats.toLocaleString('pt-BR')} lugares por ${money(expansionCost(uc, e))}. A obra leva ${e.weeks} semanas.`, 'Construir'))) return;
+    const r = startExpansion(S.game, uc, Number(d.v));
+    UI.toast(r.msg); if (r.ok) autosave(); render(true);
+  },
   setTrain: d => { const uc = userClub(S.game); uc.training = uc.training || {}; uc.training[d.k] = d.v; render(true); },
   pickSlot: d => {
     const uc = userClub(S.game);
@@ -528,6 +563,48 @@ const ACTIONS = {
   matchSpeed: () => { S.matchSpeed = (S.matchSpeed + 1) % 3; if (S.matchRunning) startMatchLoop(); render(true); },
   matchSkip: () => { stopMatchLoop(); S.subOut = null; for (const x of S.prep.matches) x.runToEnd(); render(); },
   matchTab: d => { S.matchTab = d.v; render(true); },
+  recTab: d => { S.recTab = d.v; render(true); },
+  // Carreira de jogador
+  newPlayerGo: () => { if (!S.db) return UI.toast('Aguarde o banco de dados carregar.'); go('newPlayer'); },
+  npSet: d => { S.np[d.k] = d.v; const n = document.getElementById('np-name'); if (n) S.np.name = n.value; render(true); },
+  npStart: async d => {
+    const n = document.getElementById('np-name');
+    const name = (n ? n.value : S.np.name).trim();
+    if (name.length < 3) return UI.toast('Digite o nome do jogador (3 letras ou mais).');
+    const c = S.db.clubs.find(x => x.id === d.id);
+    if (!(await UI.confirmBox(`Começar a carreira de <b>${name}</b> no <b>${c.name}</b>?`, 'Começar'))) return;
+    S.game = await busy('Montando o mundo…', () => PC.createPlayerGame(S.db, { name, pos: S.np.pos, nat: S.np.nat, clubId: c.id }));
+    autosave(); go('hub');
+  },
+  pcTrain: d => { const r = PC.trainAttr(S.game, d.v); UI.toast(r.msg); if (r.ok) autosave(); render(true); },
+  pcAccept: async d => {
+    const c = S.game.clubs.find(x => x.id === d.id);
+    if (!(await UI.confirmBox(`Aceitar a proposta do <b>${c.name}</b>?`, 'Aceitar'))) return;
+    const r = PC.acceptPcOffer(S.game, d.id); UI.toast(r.msg, 3500); if (r.ok) autosave(); render(true);
+  },
+  pcReject: d => { PC.rejectPcOffer(S.game, d.id); autosave(); render(true); },
+  pcRequest: () => { const r = PC.requestTransfer(S.game); UI.toast(r.msg, 3500); autosave(); render(true); },
+  pcPick: d => {
+    const m = S.prep && S.prep.userMatch;
+    if (!m || !m.pcPending) return UI.closeModal();
+    const evs = m.resolvePc(d.v);
+    UI.closeModal();
+    Sound.playMinute(evs, { animated: false });
+    patchMatch(S, evs);
+    startMatchLoop();
+  },
+  penPick: d => {
+    const m = S.prep.userMatch;
+    if (!m.penPending || m.pso.done) return;
+    const me = m.teams.findIndex(t => t.club.id === S.game.userClubId);
+    const v = Number(d.v);
+    const k = m.pso.next === me ? m.penKick(v, null) : m.penKick(null, v);
+    Sound.kick();
+    UI.updateModal(penModal(S, k));
+    setTimeout(() => { const el = document.getElementById('pk'); if (el) el.classList.add('go'); }, 40);
+    setTimeout(() => { if (k.ok === (k.side === me)) { Sound.goal(); UI.haptic(30); } else Sound.ooh(); }, 520);
+  },
+  penEnd: () => { const m = S.prep.userMatch; UI.closeModal(); m.closePens(); matchOver(); },
   matchInstr: d => {
     const m = S.prep.userMatch;
     if (m.finished) return;
@@ -627,6 +704,7 @@ document.addEventListener('change', e => {
   if (k === 'tableCup') go('table', { tab: 'cups', cup: e.target.value });
   if (k === 'awardsLeague') go('awards', { ...S.params, league: e.target.value });
   if (k === 'awardsSeason') go('awards', { ...S.params, season: e.target.value });
+  if (k === 'npName') { S.np.name = e.target.value; return; }
   if (k === 'verbose') { S.matchVerbose = e.target.checked; render(true); }
   if (k === 'volume') { S.settings.volume = Number(e.target.value); saveSettings(); Sound.whistle(1);
     const v = document.getElementById('vol-v'); if (v) v.textContent = Math.round(S.settings.volume * 100) + '%'; }

@@ -223,8 +223,8 @@ export function aiMarket(game) {
   game.inbox = game.inbox.filter(m => m.type !== 'offer' || m.expires >= game.round);
   if (!windowOpen(game)) return;
 
-  // 1) Propostas pelos jogadores do usuário
-  for (const p of clubPlayers(game, game.userClubId)) {
+  // 1) Propostas pelos jogadores do usuário (no modo jogador, o clube é da IA)
+  for (const p of game.mode === 'player' ? [] : clubPlayers(game, game.userClubId)) {
     if (p.loan) continue;
     const chance = p.listed ? 0.35 : (overall(p) >= 70 ? 0.025 : 0.008);
     if (rnd() > chance) continue;
@@ -245,7 +245,7 @@ export function aiMarket(game) {
     if (rnd() > 0.5) continue;
     const buyer = pick(game.clubs.filter(c => c.id !== game.userClubId));
     const targets = Object.values(game.players).filter(p =>
-      p.clubId && p.clubId !== buyer.id && p.clubId !== game.userClubId && !p.loan &&
+      p.clubId && p.clubId !== buyer.id && p.clubId !== game.userClubId && !p.loan && !p.isPC &&
       p.value < buyer.budget * 0.4 && clubById(game, p.clubId).rep <= buyer.rep + 5 && clubById(game, p.clubId).rep >= buyer.rep - 25);
     if (targets.length && clubPlayers(game, buyer.id).length < MAX_SQUAD - 2) {
       const p = targets.sort((a, b) => overall(b) - overall(a))[randInt(0, Math.min(15, targets.length - 1))];
@@ -343,7 +343,8 @@ export function seasonContracts(game) {
     if (!p.clubId) continue;
     p.contract.years--;
     if (p.contract.years > 0) continue;
-    if (p.clubId === game.userClubId) {
+    if (p.isPC) { p.contract.years = 1; msgs.push('📝 Seu contrato terminou e o clube estendeu por mais 1 ano. Veja propostas em Carreira.'); continue; }
+    if (p.clubId === game.userClubId && game.mode !== 'player') {
       msgs.push(`O contrato de ${p.name} acabou e ele deixou o clube.`);
       size[p.clubId]--; move(game, p, null);
     } else if (rnd() < 0.75 && size[p.clubId] < 30) {
@@ -354,13 +355,13 @@ export function seasonContracts(game) {
   }
   // Clubes da IA com elenco inchado dispensam os piores
   for (const c of game.clubs) {
-    if (c.id === game.userClubId) continue;
-    const sq = clubPlayers(game, c.id).sort((a, b) => overall(a) - overall(b));
+    if (c.id === game.userClubId && game.mode !== 'player') continue;
+    const sq = clubPlayers(game, c.id).filter(p => !p.isPC).sort((a, b) => overall(a) - overall(b));
     while (sq.length > 30) { const p = sq.shift(); move(game, p, null); p.contract.years = 0; }
   }
   // Agentes livres velhos e fracos saem do jogo (evita o arquivo crescer sem parar)
   for (const p of Object.values(game.players)) {
-    if (!p.clubId && (p.age >= 33 || overall(p) < 45)) delete game.players[p.id];
+    if (!p.clubId && !p.isPC && (p.age >= 33 || overall(p) < 45)) delete game.players[p.id];
   }
   touchPlayers(game);
   return msgs;

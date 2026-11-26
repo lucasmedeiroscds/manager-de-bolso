@@ -68,7 +68,9 @@ export class Match {
     this.wasBehind = [false, false];
     this._pm = [0, 0];
     this.instr = ['normal', 'normal']; // instrução ao vivo de cada time (ver INSTR)
-    this.mine = this.teams.some(t => t.club.id === this.userClubId); // jogo do usuário: ganha narração detalhada
+    this.mine = this.teams.some(t => t.club.id === this.userClubId);
+    this.pcId = opts.pcId || null;   // modo carreira: o jogador do usuário
+    this.pcLive = false;             // a tela liga quando a partida é assistida // jogo do usuário: ganha narração detalhada
   }
 
   // ---------- Instruções durante o jogo ----------
@@ -82,7 +84,7 @@ export class Match {
   aiInstr() {
     for (let i = 0; i < 2; i++) {
       const t = this.teams[i];
-      if (t.club.id === this.userClubId) continue;
+      if (this.human(t)) continue;
       const d = t.goals - this.teams[1 - i].goals;
       let k = 'normal';
       if (this.minute >= 70 && d < 0) k = this.minute >= 82 ? 'tudo' : 'pressao';
@@ -173,36 +175,59 @@ export class Match {
   }
 
   // Disputa de pênaltis: 5 cobranças para cada lado e depois alternadas
-  penalties() {
-    const kick = (t, o) => {
-      const shooters = t.onField.filter(x => x.slot !== 'GOL').map(x => this.P(x.id))
-        .sort((a, b) => b.attrs.fin - a.attrs.fin);
-      const gkSlot = o.onField.find(x => x.slot === 'GOL');
-      const gk = gkSlot ? overall(this.P(gkSlot.id), 'GOL') : 30;
-      t._pk = (t._pk || 0);
-      const p = shooters[t._pk++ % Math.max(1, shooters.length)];
-      const chance = clamp(0.62 + (p.attrs.fin - gk) / 250 + (p.moral - 50) / 1000, 0.5, 0.9);
-      return { p, ok: rnd() < chance };
-    };
-    const score = [0, 0];
-    const marks = [[], []];
+  // Cobradas uma a uma: no jogo do usuário, a tela pede o canto (cobrança)
+  // ou o pulo do goleiro (defesa). Canto: 0 esquerda, 1 meio, 2 direita.
+  penStart() {
+    if (this.pso) return;
+    this.pso = { score: [0, 0], marks: [[], []], n: [0, 0], next: 0, done: false };
     this.log('info', -1, '🥅 Empate! A decisão vai para os pênaltis.');
-    for (let round = 0; round < 30; round++) {
-      for (let i = 0; i < 2; i++) {
-        const k = kick(this.teams[i], this.teams[1 - i]);
-        if (k.ok) score[i]++;
-        marks[i].push(k.ok ? '●' : '○');
-        this.log('pen', i, `${k.ok ? '✅' : '❌'} ${k.p.name} (${this.teams[i].club.short}) ${k.ok ? 'converte' : 'perde'}. Pênaltis: ${score[0]} x ${score[1]}`);
-        // Decidido antes das 5 cobranças?
-        if (round < 5) {
-          const left = [5 - marks[0].length, 5 - marks[1].length];
-          if (score[0] + left[0] < score[1] || score[1] + left[1] < score[0]) { this.pens = score; return; }
-        }
-      }
-      if (round >= 4 && score[0] !== score[1]) { this.pens = score; return; }
-    }
-    this.pens = score[0] === score[1] ? [score[0] + 1, score[1]] : score;
   }
+  // Quem bate a próxima cobrança
+  penKicker(side = this.pso.next) {
+    const t = this.teams[side];
+    const shooters = t.onField.filter(x => x.slot !== 'GOL').map(x => this.P(x.id)).sort((a, b) => b.attrs.fin - a.attrs.fin);
+    return shooters[this.pso.n[side] % Math.max(1, shooters.length)] || this.P(t.onField[0].id);
+  }
+  penKeeper(side) {
+    const o = this.teams[1 - side];
+    const g = o.onField.find(x => x.slot === 'GOL') || o.onField[0];
+    return g ? this.P(g.id) : null;
+  }
+  penKick(dir, dive) {
+    const sh = this.pso, i = sh.next;
+    const p = this.penKicker(i), gkP = this.penKeeper(i);
+    const gk = gkP ? overall(gkP, 'GOL') : 30;
+    if (dir == null) dir = rnd() < 0.2 ? 1 : rnd() < 0.5 ? 0 : 2;
+    if (dive == null) dive = rnd() < 0.15 ? 1 : rnd() < 0.5 ? 0 : 2;
+    const base = clamp(0.62 + (p.attrs.fin - gk) / 250 + (p.moral - 50) / 1000, 0.5, 0.9);
+    // Goleiro acertou o canto: defende bem mais. Errou: quase sempre é gol.
+    const chance = dive === dir ? base * 0.45 : Math.min(0.97, base * 1.27);
+    const ok = rnd() < chance;
+    const how = ok ? 'goal' : dive === dir ? 'save' : 'miss';
+    if (ok) sh.score[i]++;
+    sh.marks[i].push(ok);
+    sh.n[i]++;
+    this.log('pen', i, `${ok ? '✅' : '❌'} ${p.name} (${this.teams[i].club.short}) ${ok ? 'converte' : how === 'save' ? 'para no goleiro' : 'manda para fora'}. Pênaltis: ${sh.score[0]} x ${sh.score[1]}`);
+    // Decidido?
+    const [a, b] = sh.score, [na, nb] = sh.n;
+    if (na <= 5 && nb <= 5 && (a + (5 - na) < b || b + (5 - nb) < a)) sh.done = true;
+    else if (na >= 5 && na === nb && a !== b) sh.done = true;
+    else if (na >= 30 && na === nb) { sh.done = true; sh.score[0]++; }
+    sh.next = 1 - i;
+    return { side: i, name: p.name, keeper: gkP ? gkP.name : 'o goleiro', dir, dive, ok, how, done: sh.done };
+  }
+  // Encerra a disputa (resolve o que faltar sozinho)
+  closePens() {
+    this.penStart();
+    while (!this.pso.done) this.penKick();
+    this.pens = this.pso.score.slice();
+    this.penPending = false;
+    const w = this.teams[this.winnerIndex()].club;
+    this.log('end', -1, `🏁 ${w.name} vence nos pênaltis por ${Math.max(...this.pens)} x ${Math.min(...this.pens)}!`);
+    this.finished = true;
+    this.ratings = this.computeRatings();
+  }
+  penalties() { this.closePens(); }
 
   buildTeam(club, isHome) {
     const slots = FORMATIONS[club.formation];
@@ -220,6 +245,8 @@ export class Match {
   }
 
   P(id) { return this.game.players[id]; }
+  // Time controlado pelo usuário (no modo carreira de jogador, quem escala é a IA)
+  human(t) { return t.club.id === this.userClubId && !this.pcId; }
 
   // Calcula as forças do time agora (muda com cansaço, expulsões, trocas)
   strength(t) {
@@ -266,6 +293,8 @@ export class Match {
   step() {
     if (this.finished) return [];
     const before = this.events.length;
+    if (this.penPending) { this.closePens(); return this.events.slice(before); }
+    if (this.pcPending) this.resolvePc('auto'); // pulou o lance (ex.: "Fim")
     this.minute++;
     if (this.minute === 1) this.log('info', -1, 'Bola rolando! Começa a partida.');
 
@@ -317,14 +346,17 @@ export class Match {
 
     if (this.minute === 45) this.log('half', -1, `Fim do primeiro tempo: ${this.score()}`);
     if (this.minute >= 90) {
+      if (this.pcPending) this.resolvePc('auto');
       this.log('end', -1, `Fim de jogo! ${this.score()}`);
       if (this.knockout && this.teams[0].goals === this.teams[1].goals) {
-        this.penalties();
-        const w = this.teams[this.winnerIndex()].club;
-        this.log('end', -1, `🏁 ${w.name} vence nos pênaltis por ${Math.max(...this.pens)} x ${Math.min(...this.pens)}!`);
+        // Jogo do usuário: a tela conduz as cobranças (penPending).
+        // Se alguém chamar step()/runToEnd antes, a disputa é resolvida sozinha.
+        if (this.mine) { this.penStart(); this.penPending = true; }
+        else this.closePens();
+      } else {
+        this.finished = true;
+        this.ratings = this.computeRatings(); // notas finais (aparecem na tela)
       }
-      this.finished = true;
-      this.ratings = this.computeRatings(); // notas finais (aparecem na tela)
     }
     return this.events.slice(before);
   }
@@ -354,6 +386,54 @@ export class Match {
     const shooters = t.onField.filter(x => x.slot !== 'GOL');
     if (!shooters.length) return;
     const sh = pickWeighted(shooters, shooters.map(x => SHOOT_W[x.slot] * Math.pow(this.P(x.id).attrs.fin, 1.5)));
+    // Modo carreira: lance decisivo do SEU jogador — a tela pergunta o que fazer
+    const pcF = this.pcLive && this.pcId ? t.onField.find(x => x.id === this.pcId) : null;
+    if (pcF && (sh.id === this.pcId || rnd() < (pcF.slot === "ATA" || pcF.slot === "MEI" ? 0.4 : 0.22))) {
+      this.pcPending = { i, q };
+      this.log('pcmoment', i, `🎯 ${this.P(this.pcId).name} recebe a bola em boa posição! O que fazer?`);
+      return;
+    }
+    this.shoot(i, t, o, q, sh);
+  }
+
+  // Resolve o lance decisivo do jogador do usuário
+  // choice: 'colocado' | 'forte' | 'driblar' | 'passar' | 'auto'
+  resolvePc(choice) {
+    const pend = this.pcPending;
+    if (!pend) return [];
+    this.pcPending = null;
+    const before = this.events.length;
+    const { i, q } = pend, t = this.teams[i], o = this.teams[1 - i];
+    const pcF = t.onField.find(x => x.id === this.pcId);
+    if (!pcF) return [];
+    const p = this.P(this.pcId);
+    if (choice === 'auto') choice = rnd() < 0.5 ? 'colocado' : 'forte';
+    if (choice === 'colocado') this.shoot(i, t, o, q, pcF, { on: 1.3, goal: 0.92, text: `${p.name} ajeita e bate colocado...` });
+    else if (choice === 'forte') this.shoot(i, t, o, q, pcF, { on: 0.8, goal: 1.4, text: `${p.name} solta a bomba!` });
+    else if (choice === 'driblar') {
+      const ok = rnd() < clamp(0.3 + (p.attrs.fin + p.attrs.for + p.attrs.pas) / 600 + (p.fitness - 60) / 400, 0.2, 0.75);
+      if (ok) {
+        this.log('play', i, `${p.name} passa pelo marcador com um drible desconcertante!`);
+        this.shoot(i, t, o, Math.min(0.95, q + 0.25), pcF, { on: 1.2, goal: 1.2 });
+      } else {
+        o.stats.tackles++;
+        const defs = o.onField.filter(x => x.slot !== 'GOL');
+        this.log('tackle', 1 - i, `${p.name} tenta o drible, mas ${defs.length ? this.P(pick(defs).id).name : 'a zaga'} toma a bola.`);
+      }
+    } else if (choice === 'passar') {
+      const mates = t.onField.filter(x => x.id !== this.pcId && x.slot !== 'GOL');
+      if (!mates.length) return this.events.slice(before);
+      const mf = pickWeighted(mates, mates.map(x => SHOOT_W[x.slot] * this.P(x.id).attrs.fin));
+      const ok = rnd() < clamp(0.45 + p.attrs.pas / 160, 0.4, 0.92);
+      if (ok) this.shoot(i, t, o, Math.min(0.95, q + 0.18), mf, { on: 1.15, assist: this.pcId, text: `${p.name} enxerga ${this.P(mf.id).name} livre e toca...` });
+      else { o.stats.tackles++; this.log('tackle', 1 - i, `O passe de ${p.name} é interceptado.`); }
+    }
+    return this.events.slice(before);
+  }
+
+  // Finalização (chute de "sh" com qualidade de lance q). mods: on/goal (multiplicadores),
+  // assist (id forçado), text (narração antes do chute)
+  shoot(i, t, o, q, sh, mods = {}) {
     const shooter = this.P(sh.id);
     const gkSlot = o.onField.find(x => x.slot === 'GOL');
     const gk = gkSlot ? this.P(gkSlot.id) : null;
@@ -366,10 +446,11 @@ export class Match {
     this.shots.push(shot);
     // Narração da jogada que leva ao chute (só no jogo do usuário)
     const mates = this.mine ? t.onField.filter(x => x.id !== sh.id && x.slot !== 'GOL') : [];
-    if (mates.length && rnd() < 0.8) this.log('play', i, pick(BUILD)(this.P(pick(mates).id).name, shooter.name));
+    if (mods.text) this.log('play', i, mods.text);
+    else if (mates.length && rnd() < 0.8) this.log('play', i, pick(BUILD)(this.P(pick(mates).id).name, shooter.name));
 
     const fin = shooter.attrs.fin * (0.65 + 0.35 * shooter.fitness / 100);
-    const onTarget = rnd() < clamp(K.ON_TARGET * (0.5 + q) * (0.6 + fin / 175), 0.1, 0.8);
+    const onTarget = rnd() < clamp(K.ON_TARGET * (0.5 + q) * (0.6 + fin / 175) * (mods.on || 1), 0.1, 0.85);
     if (!onTarget) {
       if (rnd() < (t.club.focus === 'Pelas laterais' ? 0.5 : 0.35)) t.stats.corners++;
       if (rnd() < 0.45) this.log('chance', i, pick(MISS)(shooter.name, t.club.short)).spot = spot;
@@ -380,12 +461,12 @@ export class Match {
     shot.res = 'save';
     // Goleiro: um jogador de linha improvisado no gol tem nota muito baixa
     const gkR = gk ? overall(gk, 'GOL') : 15;
-    const pGoal = clamp(K.GOAL * 2 * fin / (fin + gkR) * (0.7 + q * 0.8), 0.05, 0.85);
+    const pGoal = clamp(K.GOAL * 2 * fin / (fin + gkR) * (0.7 + q * 0.8) * (mods.goal || 1), 0.05, 0.88);
     if (rnd() < pGoal) {
       t.goals++;
       // Assistência (75% dos gols)
-      let assist = null;
-      if (rnd() < 0.75) {
+      let assist = mods.assist ? this.P(mods.assist) : null;
+      if (!assist && rnd() < 0.75) {
         const others = t.onField.filter(x => x.id !== sh.id && x.slot !== 'GOL');
         if (others.length) assist = this.P(pickWeighted(others, others.map(x => Math.pow(this.P(x.id).attrs.pas, 2))).id);
       }
@@ -457,7 +538,7 @@ export class Match {
     if (p._injury < 1) p._injury = 1;
     this.log('injury', i, `🚑 ${p.name} (${t.club.short}) se machuca${p._injury >= 4 ? ' e parece grave' : ''}.`);
     // Time do usuário decide sozinho; IA troca na hora
-    if (t.club.id !== this.userClubId) this.aiReplace(t, x);
+    if (!this.human(t)) this.aiReplace(t, x);
     else { x.injured = true; p.fitness = Math.min(p.fitness, 30); } // rende pouco até ser trocado
   }
 
@@ -519,7 +600,14 @@ export class Match {
   aiSubs() {
     if (this.minute < 55 || this.minute > 85) return;
     for (const t of this.teams) {
-      if (t.club.id === this.userClubId || t.subsLeft <= 0) continue;
+      if (this.human(t) || t.subsLeft <= 0) continue;
+      // Modo carreira: o técnico põe o seu jogador do banco no 2º tempo
+      if (this.pcId && t.bench.includes(this.pcId) && !t.used.has(this.pcId) && this.minute >= 58 && rnd() < 0.09) {
+        const pc = this.P(this.pcId);
+        const out = t.onField.filter(f => f.slot !== 'GOL').sort((a, b) =>
+          (b.slot === pc.pos) - (a.slot === pc.pos) || this.P(a.id).fitness - this.P(b.id).fitness)[0];
+        if (out && pc.injury <= 0) { this.doSub(t, out.id, this.pcId, out.slot); continue; }
+      }
       if (rnd() > 0.12) continue;
       const tired = t.onField.filter(f => f.slot !== 'GOL').sort((a, b) => this.P(a.id).fitness - this.P(b.id).fitness)[0];
       if (!tired || this.P(tired.id).fitness > 72) continue;

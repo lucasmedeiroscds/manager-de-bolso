@@ -58,6 +58,7 @@ export function statusTags(p) {
   if (p.injury > 0) t.push(`<span class="tag bad">🚑 ${p.injury} sem</span>`);
   if (p.suspended > 0) t.push(`<span class="tag bad">🟥 suspenso</span>`);
   if (p.yellow === 2) t.push(`<span class="tag warn">🟨🟨</span>`);
+  if (p.unhappy) t.push(`<span class="tag bad">😠 insatisfeito</span>`);
   if (p.listed) t.push(`<span class="tag warn">À venda</span>`);
   if (p.loan) t.push(`<span class="tag">Emprestado</span>`);
   if (p.contract.years <= 1 && p.clubId) t.push(`<span class="tag warn">Contrato ${p.contract.years}a</span>`);

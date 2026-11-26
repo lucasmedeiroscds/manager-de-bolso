@@ -100,7 +100,7 @@ export function seasonAging(game) {
     p.potential = Math.max(p.potential, overall(p));
     if (p.age >= 29) p.potential = overall(p);
     // Aposentadoria
-    if (p.age >= 34 && rnd() < (p.age - 33) * 0.3) {
+    if (!p.isPC && p.age >= 34 && rnd() < (p.age - 33) * 0.3) {
       if (p.clubId === game.userClubId) msgs.push(`${p.name} (${p.age} anos) se aposentou.`);
       delete game.players[p.id];
       continue;
@@ -111,6 +111,7 @@ export function seasonAging(game) {
     p.suspended = 0;
     p.fitness = 100;
     p.moral = 60;
+    delete p.idle; delete p.unhappy; delete p.promise; // temporada nova, conversa nova
   }
   // Base: 2 garotos por clube (FICTÍCIOS: a base real não é conhecida)
   let next = game.nextPlayerId;

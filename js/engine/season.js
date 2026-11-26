@@ -18,6 +18,10 @@ import { runTournament, tournamentsAfter } from './nations.js';
 import { nationResult, nationOffer } from './national-coach.js';
 import { weeklyScouting } from './scouting.js';
 import { initCoach, setObjectives, afterUserMatch, weeklyCareer, seasonReview } from './career.js';
+import { afterMatchMorale } from './morale.js';
+import { afterMatchClub, weeklyStadium, seasonEndClub } from './stadium.js';
+import { recordMatch } from './records.js';
+import { isPlayerMode, pcLineup, afterPcMatch, weeklyPc } from './player-career.js';
 
 export const SAVE_VERSION = 2;
 
@@ -172,10 +176,10 @@ export function prepareRound(game) {
     for (const f of round) {
       const h = clubById(game, f.h), a = clubById(game, f.a);
       for (const c of [h, a]) {
-        if (c.id === game.userClubId) warnings.push(...fixLineup(game, c));
-        else autoLineup(game, c);
+        if (c.id === game.userClubId && !isPlayerMode(game)) warnings.push(...fixLineup(game, c));
+        else { autoLineup(game, c); if (c.id === game.userClubId) pcLineup(game, c); }
       }
-      const m = new Match(game, h, a, { userClubId: game.userClubId });
+      const m = new Match(game, h, a, { userClubId: game.userClubId, pcId: game.pc && game.pc.id });
       // Público e renda já definidos antes do jogo (aparecem na tela da partida)
       const pos = table.findIndex(s => s.id === h.id) + 1;
       m.attendance = attendance(h, a, pos, l.clubIds.length);
@@ -201,10 +205,10 @@ function prepareCupPhase(game) {
     const h = clubById(game, c.f.h), a = clubById(game, c.f.a);
     for (const club of [h, a]) {
       playing.add(club.id);
-      if (club.id === game.userClubId) warnings.push(...fixLineup(game, club));
-      else autoLineup(game, club);
+      if (club.id === game.userClubId && !isPlayerMode(game)) warnings.push(...fixLineup(game, club));
+      else { autoLineup(game, club); if (club.id === game.userClubId) pcLineup(game, club); }
     }
-    const m = new Match(game, h, a, { userClubId: game.userClubId, competition: c.cup.id, knockout: c.knockout, neutral: c.neutral });
+    const m = new Match(game, h, a, { userClubId: game.userClubId, pcId: game.pc && game.pc.id, competition: c.cup.id, knockout: c.knockout, neutral: c.neutral });
     const lid = h.leagueId;
     const table = tables[lid] || (tables[lid] = standings(game, lid));
     const pos = Math.max(1, table.findIndex(s => s.id === h.id) + 1);
@@ -244,6 +248,9 @@ function finishCupPhase(game, prep) {
   }
   processCups(game).forEach(msg => inbox(game, msg));
   if (prep.userMatch) afterUserMatch(game, prep.userMatch).forEach(msg => inbox(game, msg));
+  if (prep.userMatch && isPlayerMode(game)) afterPcMatch(game, prep.userMatch).forEach(msg => inbox(game, msg));
+  else if (prep.userMatch) { afterMatchMorale(game, prep.userMatch).forEach(msg => inbox(game, msg)); afterMatchClub(game, prep.userMatch); }
+  if (prep.userMatch) recordMatch(game, prep.userMatch);
   game.cupWeekDone = game.round;
   return { phase: 'cup', seasonEnd: null };
 }
@@ -266,6 +273,11 @@ export function finishRound(game, prep) {
   refreshValues(game);
   // Carreira: reação da diretoria/torcida ao jogo e avaliação semanal
   if (prep.userMatch) afterUserMatch(game, prep.userMatch).forEach(m => inbox(game, m));
+  if (prep.userMatch && isPlayerMode(game)) afterPcMatch(game, prep.userMatch).forEach(m => inbox(game, m));
+  else if (prep.userMatch) { afterMatchMorale(game, prep.userMatch).forEach(m => inbox(game, m)); afterMatchClub(game, prep.userMatch); }
+  if (prep.userMatch) recordMatch(game, prep.userMatch);
+  if (isPlayerMode(game)) weeklyPc(game).forEach(m => inbox(game, m));
+  else weeklyStadium(game, userClub(game)).forEach(m => inbox(game, m));
   const wasOpen = windowOpen(game);
   game.round++;
   aiMarket(game);
@@ -273,7 +285,7 @@ export function finishRound(game, prep) {
   weeklyScouting(game).forEach(m => inbox(game, m));
 
   const uc = userClub(game);
-  if (uc.budget < 0) inbox(game, `⚠️ O caixa está negativo (${money(uc.budget)}). Venda jogadores ou reduza a folha.`);
+  if (uc.budget < 0 && !isPlayerMode(game)) inbox(game, `⚠️ O caixa está negativo (${money(uc.budget)}). Venda jogadores ou reduza a folha.`);
   if (wasOpen && !windowOpen(game)) inbox(game, 'A janela de transferências fechou.');
   if (!wasOpen && windowOpen(game)) inbox(game, 'A janela de transferências abriu! Até a rodada 23.');
   if (game.round === leagueRounds(game, uc.leagueId) - 8) {
@@ -328,6 +340,7 @@ export function endSeason(game) {
   game.history.unshift(summary);
   if (game.history.length > 30) game.history.length = 30;
   inbox(game, `🏆 ${summary.champion} é o campeão da ${ul.name} ${game.season}! Você terminou em ${userPos}º.`);
+  if (!isPlayerMode(game)) seasonEndClub(game, userClub(game), userPos, ul.clubIds.length).forEach(msg => inbox(game, msg));
 
   // ---- Premiação da temporada ----
   const champIds = Object.fromEntries(game.leagues.map(l => [l.id, game.lastTables[l.id][0]]));

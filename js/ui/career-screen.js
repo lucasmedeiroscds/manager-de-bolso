@@ -91,6 +91,7 @@ export function careerScreen(S) {
       <p class="tiny muted mt" style="margin-bottom:0">Dá para procurar uma vez por semana. O campeonato continua enquanto você está sem clube.</p>
     </div>` : `
   <div class="section-title"><h3>Confiança</h3></div>
+  ${c.ultimatum ? `<div class="ultimato">🚨 <b>Ultimato:</b> ${c.ultimatum.need} pontos em ${c.ultimatum.games} jogos · você tem <b>${c.ultimatum.pts}</b>, faltam ${c.ultimatum.left} jogo(s).</div>` : ''}
   <div class="gauges">${gauge(c.board, 'Diretoria')}${gauge(c.fans, 'Torcida')}</div>
   <p class="tiny muted center">Vencer quem é mais forte vale mais; perder para um mais fraco pesa mais. Com a diretoria muito baixa, você pode ser demitido.</p>`}
 
@@ -140,6 +141,7 @@ export function careerCard(S) {
       <div><span class="tiny muted">DIRETORIA</span><div class="bar"><i style="width:${c.board}%;background:${moodCol(c.board)}"></i></div></div>
       <div><span class="tiny muted">TORCIDA</span><div class="bar"><i style="width:${c.fans}%;background:${moodCol(c.fans)}"></i></div></div>
     </div>
+    ${c.ultimatum ? `<div class="ultimato">🚨 <b>Ultimato:</b> ${c.ultimatum.need} pontos em ${c.ultimatum.games} jogos · você tem <b>${c.ultimatum.pts}</b>, faltam ${c.ultimatum.left} jogo(s).</div>` : ''}
     ${c.offers.length ? `<div class="tag warn" style="margin-top:10px;display:inline-block">📨 ${c.offers.length} proposta(s) de emprego</div>` : ''}
     ${c.natOffer ? `<div class="tag warn" style="margin-top:10px;display:inline-block">🧢 Convite da seleção ${esc(c.natOffer.nat)}</div>` : ''}
     ${c.nation ? `<div class="tiny muted" style="margin-top:8px">🧢 Também técnico da seleção: <b>${esc(c.nation.nat)}</b></div>` : ''}

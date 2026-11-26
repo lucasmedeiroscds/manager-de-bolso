@@ -35,10 +35,11 @@ export function addTx(game, clubId, label, value) {
 export function weeklyFinances(game, homeGames) {
   for (const club of game.clubs) {
     addTx(game, club.id, 'Salários', -weeklyWages(game, club.id));
-    addTx(game, club.id, 'Patrocínio', club.sponsor);
+    addTx(game, club.id, club.deal ? `Patrocínio (${club.deal.name})` : 'Patrocínio', club.deal ? club.deal.base : club.sponsor);
   }
   for (const g of homeGames) {
     const club = clubById(game, g.home);
+    if (club.id === game.userClubId) { club.attLog = club.attLog || []; club.attLog.unshift({ att: g.att, cap: club.stadium }); club.attLog.length = Math.min(club.attLog.length, 8); }
     addTx(game, club.id, `Bilheteria (${g.att.toLocaleString('pt-BR')} pagantes)`, g.att * club.ticketPrice);
   }
 }

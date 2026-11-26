@@ -155,3 +155,12 @@ sw.js                 modo offline (aumente a VERSAO ao mudar arquivos)
 node testes/simular-temporadas.js 5
 ```
 Simula 5 temporadas completas e confere se gols, pontos e finanças ficam realistas.
+
+## Novidades recentes
+- **Instruções ao vivo** (Pressionar, Contra-ataque, Segurar, Tudo ao ataque) e narração lance a lance.
+- **Pênaltis interativos**: escolha o canto da cobrança e o pulo do goleiro.
+- **Moral e minutos**: jogador encostado fica insatisfeito; converse com ele na ficha.
+- **Estádio e patrocínio**: ampliação com obra, ocupação média e 3 tipos de patrocinador por temporada.
+- **Ultimato da diretoria** quando a confiança despenca.
+- **Histórico e recordes**: hall da fama do técnico, artilheiros de todos os tempos e maiores goleadas.
+- **Carreira de jogador**: crie um garoto de 17 anos; o técnico (IA) escala conforme a confiança, você decide nos seus lances, treina com pontos de experiência, recebe propostas e pode chegar à seleção.

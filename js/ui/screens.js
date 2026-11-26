@@ -9,6 +9,10 @@ import { cupStatus, groupTable, cupScorers, qualZones } from '../engine/cups.js'
 import { windowOpen, askingPrice, wageAsk, clubById } from '../engine/market.js';
 import { weeklyWages } from '../engine/finance.js';
 import { TRAIN_FOCUS, TRAIN_INTENSITY } from '../engine/evolution.js';
+import { squadRoles, moodOf, ROLE_LABEL } from '../engine/morale.js';
+import { isPlayerMode } from '../engine/player-career.js';
+import { pcCard } from './player-career-screen.js';
+import { sponsorOffers, occupancy, EXPANSIONS, expansionCost, MAX_STADIUM } from '../engine/stadium.js';
 import { SLOTS, slotInfo } from '../storage.js';
 import { badge, posTag, ovrTag, bar, playerRow, statusTags, ring, radar } from './ui.js';
 import { icon } from './icons.js';
@@ -65,6 +69,7 @@ export function startScreen(S) {
   <div class="list stagger">
     <div class="item tap menu-item" data-act="go" data-to="chooseClub" ${db ? '' : 'style="opacity:.5;pointer-events:none"'}><span class="ic-box">${icon('bolt')}</span><div class="grow"><b>Novo jogo</b><div class="small muted">Escolha um clube em qualquer continente</div></div>${icon('chevron', 18, 'chev')}</div>
     <div class="item tap menu-item" data-act="loadMenu"><span class="ic-box">${icon('folder')}</span><div class="grow"><b>Carregar jogo</b><div class="small muted">Espaços salvos neste aparelho</div></div>${icon('chevron', 18, 'chev')}</div>
+    <div class="item tap menu-item" data-act="newPlayerGo" ${db ? '' : 'style="opacity:.5;pointer-events:none"'}><span class="ic-box">${icon('users')}</span><div class="grow"><b>Carreira de jogador</b><div class="small muted">Crie um craque de 17 anos e viva a carreira dele</div></div>${icon('chevron', 18, 'chev')}</div>
     <div class="item tap menu-item" data-act="importSave"><span class="ic-box">${icon('download')}</span><div class="grow"><b>Importar jogo de arquivo</b><div class="small muted">Backup exportado antes</div></div>${icon('chevron', 18, 'chev')}</div>
   </div>
   <div class="card mt">
@@ -170,7 +175,7 @@ export function hubScreen(S) {
       <div class="strength"><b>${sh}</b><div><div class="duel"><i style="width:${sharePct}%"></i></div><div class="tiny muted center" style="margin-top:3px">FORÇA DOS TIMES</div></div><b>${sa}</b></div>
       ${nm.kind === 'cup' ? `<p class="tiny muted center" style="position:relative">Meio de semana${userFixture(g) ? ' · o jogo da liga vem depois' : ''}${!nm.stage.startsWith('Grupo') ? ' · empate vai para os pênaltis' : ''}</p>` : ''}
       <button class="btn-main" data-act="playRound">${icon('play', 20)} Jogar partida</button>
-      <button class="btn-block btn-sm mt btn-ghost" data-act="go" data-to="tactics">${icon('tactics', 16)} Ajustar escalação</button>
+      ${isPlayerMode(g) ? `<p class="tiny muted center" style="position:relative;margin:8px 0 0">Você: <b>${esc(g.pc.role)}</b> · quem escala é o técnico</p>` : `<button class="btn-block btn-sm mt btn-ghost" data-act="go" data-to="tactics">${icon('tactics', 16)} Ajustar escalação</button>`}
     </div>`;
   } else {
     const leagueOver = g.round >= leagueRounds(g, ul.id);
@@ -205,7 +210,7 @@ export function hubScreen(S) {
     <div class="tile"><div class="k">${icon('fire', 13)} Forma</div><div class="v"><span class="form">${last.map(r => `<i class="${r}"></i>`).join('') || '<span class="muted small">—</span>'}</span></div></div>
   </div>
   ${next}
-  ${careerCard(S)}
+  ${isPlayerMode(g) ? pcCard(S) : careerCard(S)}
   ${cupsCard}
   <div class="list"><div class="item tap menu-item" data-act="go" data-to="awards"><span class="ic-box" style="color:var(--gold);background:rgba(255,210,90,.12)">${icon('medal')}</span><div class="grow"><b>Corrida pelos prêmios</b><div class="small muted">Melhor da liga e Melhor do Mundo</div></div>${icon('chevron', 18, 'chev')}</div></div>
   ${offers.length ? `<div class="section-title"><h3>Propostas recebidas</h3><span class="tag warn">${offers.length}</span></div><div class="list stagger">${offers.map(o => offerRow(g, o)).join('')}</div>` : ''}
@@ -335,6 +340,17 @@ export function playerModal(S, id) {
         <div class="small">Sem clube. Sem taxa de transferência.<br>Salário pedido: <b>${money(wage)}/sem</b> · Luvas: ${money(wage * 4)}</div>
         <button class="btn-good btn-block mt" data-act="negotiate" data-id="${p.id}">✍️ Negociar contrato</button>
       </div>`;
+  }
+  // Moral e minutos em campo (só jogadores do seu clube)
+  if (mine) {
+    const role = squadRoles(g, g.userClubId)[p.id] || 'reserva';
+    const md = moodOf(p);
+    actions += `<h3>Moral e minutos</h3>
+      <div class="card"><div class="row between small"><span>Papel no elenco: <b>${ROLE_LABEL[role]}</b></span><span class="${md.k}">${md.t}</span></div>
+      <div class="tiny muted mt">${p.idle ? `${p.idle} jogo(s) seguido(s) sem entrar.` : 'Jogou na última partida.'}${p.promise ? ` · Promessa: jogar nos próximos ${p.promise} jogo(s).` : ''}</div>
+      <div class="grid2 mt"><button class="btn-sm" data-act="talkPlayer" data-id="${p.id}" data-v="prometer">${icon('star', 15)} Prometer minutos</button>
+      <button class="btn-sm" data-act="talkPlayer" data-id="${p.id}" data-v="paciencia">${icon('shield', 15)} Pedir paciência</button></div>
+      <p class="tiny muted" style="margin-bottom:0">Titulares se irritam após 2 jogos sem entrar; rodízio após 4; reservas após 8. Moral alta faz o jogador render mais.</p></div>`;
   }
   // Treino individual (só jogadores do seu clube)
   if (mine) {
@@ -712,7 +728,7 @@ export function financeScreen(S) {
   <div class="card hl center"><div class="tiny muted">CAIXA ATUAL</div><div style="font-size:28px;font-weight:800" class="${uc.budget < 0 ? 'bad' : ''}">${money(uc.budget)}</div></div>
   <div class="grid2 mb">
     <div class="card" style="margin:0"><div class="tiny muted">SALÁRIOS / SEMANA</div><b class="bad">-${money(wages)}</b></div>
-    <div class="card" style="margin:0"><div class="tiny muted">PATROCÍNIO / SEMANA</div><b class="good">+${money(uc.sponsor)}</b></div>
+    <div class="card" style="margin:0"><div class="tiny muted">PATROCÍNIO / SEMANA</div><b class="good">+${money(uc.deal ? uc.deal.base : uc.sponsor)}</b></div>
     <div class="card" style="margin:0"><div class="tiny muted">ESTÁDIO</div>${uc.stadiumName ? esc(uc.stadiumName) + '<br>' : ''}${uc.stadium.toLocaleString('pt-BR')} lugares</div>
     <div class="card" style="margin:0"><div class="tiny muted">TORCIDA</div>${uc.fans.toLocaleString('pt-BR')}</div>
   </div>
@@ -725,8 +741,37 @@ export function financeScreen(S) {
     </div>
     <p class="tiny muted mt">Ingresso caro dá mais dinheiro por torcedor, mas o estádio enche menos. Time bem colocado atrai mais público.</p>
   </div>
+  ${sponsorCard(g, uc)}
+  ${stadiumCard(g, uc)}
   <h3>Extrato</h3>
   <div class="list">${ledger.length ? ledger.map(l => `<div class="item small"><span class="grow">${esc(l.label)}<div class="tiny muted">Semana ${l.round + 1}/${l.season}</div></span><b class="${l.value < 0 ? 'bad' : 'good'}">${l.value < 0 ? '' : '+'}${money(l.value)}</b></div>`).join('') : '<div class="item muted small">Sem movimentações ainda.</div>'}</div>`;
+}
+
+function sponsorCard(g, uc) {
+  if (uc.deal) {
+    const d = uc.deal;
+    return `<h3>Patrocinador</h3><div class="card"><div class="row between"><b>${icon('coin', 16)} ${esc(d.name)}</b><span class="tag good">até o fim de ${d.season}</span></div>
+      <div class="small mt">Fixo: <b>${money(d.base)}</b>/semana${d.win ? ` · Vitória: <b>+${money(d.win)}</b>` : ''}${d.top ? ` · G${d.topN}: <b>+${money(d.top)}</b>` : ''}</div></div>`;
+  }
+  return `<h3>Escolha o patrocinador da temporada</h3>
+  <p class="tiny muted">O contrato vale até o fim da temporada. Sem escolha, o clube recebe ${money(uc.sponsor)}/semana.</p>
+  <div class="list">${sponsorOffers(g, uc).map(o => `<div class="item" style="display:block">
+    <div class="row between"><b>${esc(o.name)}</b><button class="btn-sm" data-act="signSponsor" data-v="${o.id}">Assinar</button></div>
+    <div class="small">Fixo <b>${money(o.base)}</b>/sem${o.win ? ` · vitória <b>+${money(o.win)}</b>` : ''}${o.top ? ` · G${o.topN} <b>+${money(o.top)}</b>` : ''}</div>
+    <div class="tiny muted">${esc(o.desc)}</div></div>`).join('')}</div>`;
+}
+
+function stadiumCard(g, uc) {
+  const occ = occupancy(uc);
+  const b = uc.build;
+  return `<h3>Estádio</h3><div class="card">
+    <div class="row between"><b>${icon('stadium', 16)} ${esc(uc.stadiumName || 'Estádio do ' + uc.name)}</b><b>${uc.stadium.toLocaleString('pt-BR')} lugares</b></div>
+    <div class="attr mt"><span class="small">Ocupação média</span>${bar(Math.round((occ || 0) * 100), 100)}<b class="right">${occ == null ? '—' : Math.round(occ * 100) + '%'}</b></div>
+    <p class="tiny muted">${occ == null ? 'Jogue em casa para ver a ocupação.' : occ > 0.93 ? '🔥 O estádio vive lotado: ampliar deve dar lucro.' : occ < 0.7 ? 'Sobram lugares: ampliar agora não compensa. Baixe o ingresso ou ganhe mais jogos para atrair a torcida.' : 'Ocupação boa. Ampliar compensa se a torcida continuar crescendo.'}</p>
+    ${b ? `<div class="attr"><span class="small">🏗️ Obra (+${b.seats.toLocaleString('pt-BR')})</span>${bar(Math.round((b.total - b.weeksLeft) / b.total * 100), 100)}<b class="right" style="white-space:nowrap">${b.weeksLeft}s</b></div>`
+      : `<div class="list">${EXPANSIONS.map((e, i) => `<div class="item small"><span class="grow"><b>${e.label}</b> · +${e.seats.toLocaleString('pt-BR')} lugares<div class="tiny muted">${money(expansionCost(uc, e))} · ${e.weeks} semanas de obra</div></span>
+        <button class="btn-sm" data-act="expandStadium" data-v="${i}" ${uc.stadium + e.seats > MAX_STADIUM ? 'disabled' : ''}>Construir</button></div>`).join('')}</div>`}
+  </div>`;
 }
 
 // ---------------------------------------------------------------
@@ -742,7 +787,8 @@ export function moreScreen(S) {
       ${it('go', 'whistle', 'Carreira do técnico', 'Metas, diretoria, propostas e troféus', 'data-to="career"')}
       ${it('go', 'medal', 'Prêmios', 'Melhor da liga e Melhor do Mundo', 'data-to="awards"', 'style="color:var(--gold);background:rgba(255,210,90,.12)"')}
       ${it('go', 'globe', 'Seleções e Copa do Mundo', 'Ranking, convocações, Copa, Euro e Copa América', 'data-to="nations"', 'style="color:var(--accent2);background:rgba(46,230,255,.12)"')}
-      ${it('go', 'coin', 'Finanças', 'Caixa, ingressos e extrato', 'data-to="finance"')}
+      ${it('go', 'trophy', 'Histórico e recordes', 'Hall da fama, artilheiros e goleadas', 'data-to="records"')}
+      ${isPlayerMode(g) ? '' : it('go', 'coin', 'Finanças', 'Caixa, ingressos e extrato', 'data-to="finance"')}
       ${it('go', 'palette', 'Aparência e som', 'Tema nas cores do clube, apito, torcida', 'data-to="settings"')}
     </div>
     <h3>Jogo salvo</h3>

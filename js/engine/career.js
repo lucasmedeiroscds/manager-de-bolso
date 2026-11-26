@@ -165,6 +165,21 @@ export function afterUserMatch(game, m) {
   c.stats.games++;
   if (score >= 0.8) c.stats.w++; else if (score <= 0.15) c.stats.l++; else c.stats.d++;
   if (c.fans <= 20 && rnd() < 0.3) msgs.push('📣 A torcida protesta e pede a sua saída!');
+  // Ultimato da diretoria: precisa somar os pontos nos próximos jogos
+  const u = c.ultimatum;
+  if (u) {
+    u.pts += gf > ga ? 3 : gf === ga ? 1 : 0;
+    u.left--;
+    if (u.pts >= u.need) {
+      delete c.ultimatum;
+      c.board = clamp(Math.max(c.board, 30) + 12, 0, 100);
+      msgs.push('✅ Ultimato cumprido! A diretoria renovou a confiança em você.');
+    } else if (u.left <= 0 || u.pts + u.left * 3 < u.need) {
+      delete c.ultimatum;
+      fire(game, 'Você não cumpriu o ultimato da diretoria.');
+      msgs.push(`❌ Ultimato não cumprido. Você foi demitido do ${clubById(game, game.userClubId).name}.`);
+    }
+  }
   return msgs;
 }
 
@@ -187,8 +202,13 @@ export function weeklyCareer(game) {
   // Avisos
   if (c.board < 25 && !c._warned) { msgs.push('⚠️ A diretoria está insatisfeita. Os próximos jogos podem decidir o seu futuro.'); c._warned = true; }
   if (c.board >= 35) c._warned = false;
-  // Demissão
-  if (game.round >= 10 && c.board <= 10) {
+  // Pressão máxima: a diretoria dá um ultimato (pontos mínimos em poucos jogos)
+  if (game.round >= 6 && c.board <= 15 && !c.ultimatum) {
+    c.ultimatum = { games: 3, left: 3, need: 4, pts: 0 };
+    msgs.push('🚨 ULTIMATO: a diretoria exige pelo menos 4 pontos nos próximos 3 jogos. Senão, você está fora.');
+  }
+  // Demissão direta só em casos extremos (o ultimato normalmente decide)
+  if (game.round >= 10 && c.board <= 3 && !c.ultimatum) {
     fire(game, 'A diretoria perdeu a confiança no seu trabalho.');
     msgs.push(`❌ Você foi demitido do ${clubById(game, game.userClubId).name}.`);
   }
@@ -279,7 +299,7 @@ export function takeJob(game, clubId) {
   for (const p of Object.values(game.players)) if (p.clubId === nc.id) p.listed = false;
   c.fired = false; c.firedReason = null;
   c.offers = [];
-  c.board = 62; c.fans = 55;
+  c.board = 62; c.fans = 55; delete c.ultimatum;
   c.joinedSeason = game.season; c.joinedRound = game.round;
   autoLineup(game, nc);
   setObjectives(game);
@@ -329,6 +349,7 @@ export function seasonReview(game, summary) {
     const n = c.rep >= 50 ? 2 : 1;
     if (rnd() < 0.4 + c.rep / 200) c.offers = makeOffers(game, n, c.rep - 10, c.rep + 8);
     c.board = clamp(55 + (c.board - 55) * 0.5, 30, 90); // nova temporada, nova chance
+    delete c.ultimatum;
   }
   for (const o of c.offers) o.expires = 4; // valem até a 5ª semana da próxima temporada
   return { results, repDelta: Math.round(repDelta), titles: titles.map(t => t.name), firedNow, rep: c.rep, level: coachLevel(c.rep) };
