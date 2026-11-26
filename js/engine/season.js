@@ -13,6 +13,9 @@ import { weeklyEvolution, seasonAging, refreshValues } from './evolution.js';
 import { aiMarket, aiFillSquads, seasonContracts, news, windowOpen, clubById } from './market.js';
 import { createCups, cupFixturesForWeek, processCups } from './cups.js';
 import { leagueAwards, worldAwards, titleBonus, grantAwards } from './awards.js';
+import { addSecondDivisions, promoteRelegate } from './divisions.js';
+import { runTournament, tournamentsAfter } from './nations.js';
+import { weeklyScouting } from './scouting.js';
 import { initCoach, setObjectives, afterUserMatch, weeklyCareer, seasonReview } from './career.js';
 
 export const SAVE_VERSION = 2;
@@ -43,6 +46,9 @@ export function createGame(db, userClubId, coachName = 'Técnico') {
   // Clubes sem liga não entram
   game.clubs = game.clubs.filter(c => c.leagueId);
   for (const c of game.clubs) { c.marking = c.marking || 'Média'; c.focus = c.focus || 'Geral'; }
+  // ids dos jogadores gerados ("g123") continuam de onde o banco parou
+  game.nextPlayerId = 1 + Math.max(0, ...Object.keys(game.players).filter(k => k[0] === 'g').map(k => Number(k.slice(1)) || 0));
+  addSecondDivisions(game); // 2ªs divisões (nomes reais, elencos gerados) nos 8 principais países
   touchPlayers(game);
   aiFillSquads(game); // garante elencos completos
   // A IA escolhe formação e estilo
@@ -263,6 +269,7 @@ export function finishRound(game, prep) {
   game.round++;
   aiMarket(game);
   weeklyCareer(game).forEach(m => inbox(game, m));
+  weeklyScouting(game).forEach(m => inbox(game, m));
 
   const uc = userClub(game);
   if (uc.budget < 0) inbox(game, `⚠️ O caixa está negativo (${money(uc.budget)}). Venda jogadores ou reduza a folha.`);
@@ -339,6 +346,17 @@ export function endSeason(game) {
   if (mineWon.length) inbox(game, `🎉 Seus jogadores premiados: ${[...new Set(mineWon.map(e => e.name))].join(', ')}!`);
   for (const p of Object.values(game.players)) p.ss = null; // zera estatísticas para a nova temporada
 
+  // ---- Torneios de seleções nas férias (Copa do Mundo, Eurocopa, Copa América) ----
+  summary.nationals = [];
+  for (const def of tournamentsAfter(game.season)) {
+    const t = runTournament(game, def, game.season + 1);
+    if (!t) continue;
+    game.nationalCups = [t, ...(game.nationalCups || [])].slice(0, 12);
+    summary.nationals.push({ name: t.name, year: t.year, champion: t.champion, runnerUp: t.runnerUp, best: t.best, userCalled: t.userCalled.length });
+    inbox(game, `🌍 ${t.name} ${t.year}: ${t.champion} é campeão! (vice: ${t.runnerUp})${t.best ? ` · Craque: ${t.best.name}` : ''}`);
+    if (t.userCalled.length) inbox(game, `📣 ${t.userCalled.length} jogador(es) do seu clube foram convocados para a ${t.name}: ${t.userCalled.map(u => `${u.name} (${u.nat})`).join(', ')}.`);
+  }
+
   // ---- Balanço da carreira do técnico (metas, títulos, reputação) ----
   if (game.coach) {
     summary.career = seasonReview(game, { ...summary, leagueName: ul.name });
@@ -356,6 +374,9 @@ export function endSeason(game) {
 
   game.season++;
   game.round = 0;
+  // Acesso e rebaixamento (e cria as 2ªs divisões em jogos salvos antigos)
+  promoteRelegate(game, game.lastTables).forEach(m => inbox(game, m));
+  addSecondDivisions(game);
   makeAllFixtures(game);
   createCups(game);
   if (game.coach && !game.coach.fired) setObjectives(game); // novas metas

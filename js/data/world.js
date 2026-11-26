@@ -5,6 +5,7 @@
 // Aqui cada jogador é expandido para o formato completo do jogo.
 // =============================================================
 import { marketValue, wageDemand } from '../engine/ratings.js';
+import { addSecondDivisions } from '../engine/divisions.js';
 
 export function expandPlayer(a) {
   const [id, name, pos, age, clubId, fin, pas, def, forc, res, gk, potential, years, nat, realValueEUR] = a;
@@ -30,5 +31,9 @@ export function expandWorld(d) {
 export async function loadWorld() {
   const r = await fetch('data/mundo.json');
   if (!r.ok) throw new Error('Não foi possível carregar data/mundo.json');
-  return expandWorld(await r.json());
+  const db = expandWorld(await r.json());
+  // 2ªs divisões já no banco: assim dá para escolher um clube da Série B
+  db.nextPlayerId = 1; db.season = 2026;
+  addSecondDivisions(db);
+  return db;
 }

@@ -624,6 +624,22 @@ label { display: block; font-size: 12px; color: var(--muted); margin: 10px 0 5px
 .section-title { display: flex; align-items: center; justify-content: space-between; margin: 18px 0 10px; }
 .section-title h3 { margin: 0; flex: 1; }
 
+/* comparação de jogadores */
+.cmp-head { text-align: center; padding: 10px; border-radius: 14px; background: var(--glass); border: 1px solid var(--line); }
+.cmp-head.a { border-color: rgba(196, 255, 61, .55); }
+.cmp-head.b { border-color: rgba(46, 230, 255, .55); }
+.radar.cmp .ra { fill: rgba(196, 255, 61, .22); stroke: var(--accent); stroke-width: 2; }
+.radar.cmp .rb { fill: rgba(46, 230, 255, .2); stroke: var(--accent2); stroke-width: 2; }
+.compare-bar {
+  position: fixed; left: 50%; transform: translateX(-50%); bottom: calc(var(--nav-h) + 20px); z-index: 15;
+  background: rgba(10, 18, 32, .92); border: 1px solid var(--accent2); border-radius: 16px; padding: 8px 10px 8px 14px;
+  display: flex; align-items: center; gap: 10px; font-size: 13px; box-shadow: 0 10px 30px -8px #000; max-width: 92vw;
+}
+/* barra deslizante (negociação) */
+input[type=range] { appearance: none; -webkit-appearance: none; height: 8px; padding: 0; min-height: 0; border-radius: 99px; background: rgba(255, 255, 255, .12); border: 0; }
+input[type=range]::-webkit-slider-thumb { -webkit-appearance: none; width: 26px; height: 26px; border-radius: 50%; background: var(--accent); box-shadow: 0 0 0 4px rgba(196, 255, 61, .25); cursor: pointer; }
+input[type=range]::-moz-range-thumb { width: 26px; height: 26px; border-radius: 50%; background: var(--accent); border: 0; }
+
 /* escolha de copa (aba Copas) */
 .cup-pick { flex: 0 0 62%; }
 .cup-pick.on { border-color: var(--accent); background: linear-gradient(135deg, rgba(196, 255, 61, .2), rgba(196, 255, 61, .05)); box-shadow: 0 0 0 1px rgba(196, 255, 61, .4); }

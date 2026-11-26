@@ -13,6 +13,9 @@ import { SLOTS, slotInfo } from '../storage.js';
 import { badge, posTag, ovrTag, bar, playerRow, statusTags, ring, radar } from './ui.js';
 import { icon } from './icons.js';
 import { careerScreen, careerCard } from './career-screen.js';
+import { zoneSizes } from '../engine/divisions.js';
+import { INDIVIDUAL_TRAIN } from '../engine/evolution.js';
+import { scoutView } from './market-ui.js';
 import { layout } from './match-screen.js';
 import { ovrClass } from '../engine/ratings.js';
 
@@ -319,16 +322,25 @@ export function playerModal(S, id) {
         <label>Sua proposta (R$)</label>
         <input id="offer" type="number" inputmode="numeric" step="10000" value="${ask}">
         <div class="btn-row mt">
-          <button class="btn-good" data-act="buy" data-id="${p.id}">${icon('coin', 17)} Comprar</button>
+          <button class="btn-good" data-act="negotiate" data-id="${p.id}">${icon('coin', 17)} Negociar compra</button>
           <button data-act="loanIn" data-id="${p.id}">${icon('swap', 17)} Empréstimo</button>
         </div>
         ${windowOpen(g) ? '' : '<p class="tiny warn mt">A janela de transferências está fechada.</p>'}
       </div>` : `
       <div class="card mt">
         <div class="small">Sem clube. Sem taxa de transferência.<br>Salário pedido: <b>${money(wage)}/sem</b> · Luvas: ${money(wage * 4)}</div>
-        <button class="btn-good btn-block mt" data-act="buy" data-id="${p.id}">✍️ Contratar</button>
+        <button class="btn-good btn-block mt" data-act="negotiate" data-id="${p.id}">✍️ Negociar contrato</button>
       </div>`;
   }
+  // Treino individual (só jogadores do seu clube)
+  if (mine) {
+    const opts = Object.entries(INDIVIDUAL_TRAIN).filter(([k]) => k !== 'gk' || p.pos === 'GOL');
+    actions += `<h3>Treino individual</h3>
+      <div class="chips"><button class="chip ${!p.trainFocus ? 'on' : ''}" data-act="setPTrain" data-id="${p.id}" data-v="">Automático</button>
+      ${opts.map(([k, l]) => `<button class="chip ${p.trainFocus === k ? 'on' : ''}" data-act="setPTrain" data-id="${p.id}" data-v="${k}">${l}</button>`).join('')}</div>
+      <p class="tiny muted">O jogador evolui mais no atributo escolhido (75% das melhoras).${p.potential <= overall(p) ? ' <span class="warn">Ele já chegou ao potencial máximo.</span>' : ''}</p>`;
+  }
+  actions += `<button class="btn-sm btn-block mt" data-act="compareStart" data-id="${p.id}">${icon('swap', 15)} Comparar com outro jogador</button>`;
   // Carta do jogador: cor pelo nível (ouro 75+, prata 65+, bronze 55+)
   const ov = overall(p);
   const tier = ov >= 75 ? 'gold' : ov >= 65 ? 'silver' : ov >= 55 ? 'bronze' : 'basic';
@@ -354,7 +366,8 @@ export function playerModal(S, id) {
         ${A.filter(([, k]) => k !== 'gk' || p.pos === 'GOL').map(([l, k]) => `<div class="attr" style="grid-template-columns:1fr 30px;gap:6px;margin:3px 0"><span class="tiny muted" style="text-transform:uppercase;letter-spacing:.06em">${l}</span><b class="right" style="font-size:15px">${p.attrs[k]}</b><div style="grid-column:1/-1">${bar(p.attrs[k], 99)}</div></div>`).join('')}
       </div>
     </div>
-    <div class="attr" style="margin-top:10px"><span class="small">${icon('bolt', 14)} Potencial</span>${bar(p.potential, 99)}<b class="right">${mine || p.age > 23 ? p.potential : '?'}</b></div>
+    <div class="attr" style="margin-top:10px"><span class="small">${icon('bolt', 14)} Potencial</span>${bar(p.potential, 99)}<b class="right">${mine || p.age > 23 || p.scouted ? p.potential : '?'}</b></div>
+    ${p.scouted && !mine ? '<div class="tiny good">🔭 Potencial revelado pelo seu olheiro</div>' : ''}
   </div>
   <div class="kv mb">
     <div>${ring(p.fitness, 44)}<span>Energia</span></div>
@@ -500,7 +513,10 @@ export function tableScreen(S) {
   if (tab === 'scorers') return head + scorersView(S, L);
   const st = standings(g, lid);
   const n = st.length;
+  // Faixas: acesso/rebaixamento reais quando a liga tem 2ª divisão
+  const zs = zoneSizes(g, lid);
   const z = Math.max(2, Math.round(n / 5));
+  const zTop = zs ? (zs.promote || z) : z, zBot = zs ? zs.relegate : z;
   const mine = g.history.filter(h => h.champions && h.champions[lid]);
   return head + `
   <div class="card" style="padding:6px 8px">
@@ -508,14 +524,15 @@ export function tableScreen(S) {
     <tr><th>#</th><th style="text-align:left">Clube</th><th>P</th><th>J</th><th>V</th><th>SG</th><th>Últ.</th></tr>
     ${st.map((s, i) => {
       const c = club(g, s.id);
-      const cls = [s.id === g.userClubId ? 'me' : '', i < z ? 'g4' : '', i >= n - z ? 'z4' : ''].join(' ');
+      const cls = [s.id === g.userClubId ? 'me' : '', i < zTop ? 'g4' : '', zBot && i >= n - zBot ? 'z4' : ''].join(' ');
       return `<tr class="${cls}"><td>${i + 1}</td>
         <td class="team"><span class="row" style="gap:6px">${badge(c, 'sm')}<span class="ellipsis" style="max-width:120px">${esc(c.name)}</span></span></td>
         <td><b>${s.pts}</b></td><td>${s.j}</td><td>${s.v}</td><td>${s.gp - s.gc}</td>
         <td><span class="form">${s.form.slice(-3).map(r => `<i class="${r}"></i>`).join('')}</span></td></tr>`;
     }).join('')}
   </table></div>
-  <p class="tiny muted"><span class="good">▌</span> ${z} primeiros &nbsp; <span class="bad">▌</span> ${z} últimos</p>
+  <p class="tiny muted">${zs && zs.promote ? `<span class="good">▌</span> ${zTop} sobem para a 1ª divisão`
+    : `<span class="good">▌</span> ${zTop} primeiros &nbsp; ${zBot ? `<span class="bad">▌</span> ${zBot} ${zs ? 'caem para a 2ª divisão' : 'últimos'}` : ''}`}</p>
   ${mine.length ? `<h3>Campeões anteriores</h3><div class="list">${mine.map(h => `<div class="item small">🏆 ${h.season}: <b>${esc(h.champions[lid])}</b>${h.leagueId === lid ? ` · você: ${h.userPos}º` : ''}</div>`).join('')}</div>` : ''}`;
 }
 
@@ -627,6 +644,7 @@ export function marketScreen(S) {
     <button class="${tab === 'search' ? 'on' : ''}" data-act="go" data-to="market" data-tab="search">Buscar</button>
     <button class="${tab === 'offers' ? 'on' : ''}" data-act="go" data-to="market" data-tab="offers">Propostas</button>
     <button class="${tab === 'mine' ? 'on' : ''}" data-act="go" data-to="market" data-tab="mine">À venda</button>
+    <button class="${tab === 'scout' ? 'on' : ''}" data-act="go" data-to="market" data-tab="scout">Olheiros</button>
   </div>`;
   const head = `<div class="row between"><h1>Mercado</h1><span class="tag ${windowOpen(g) ? 'good' : ''}">${windowOpen(g) ? 'Janela aberta' : 'Janela fechada'}</span></div>
   <p class="small muted">Caixa: <b>${money(uc.budget)}</b> · Janelas: semanas 1–5 e 19–23.</p>${tabs}`;
@@ -635,6 +653,7 @@ export function marketScreen(S) {
     const offers = g.inbox.filter(m => m.type === 'offer');
     return head + (offers.length ? `<div class="list">${offers.map(o => offerRow(g, o)).join('')}</div>` : '<p class="muted">Nenhuma proposta. Coloque jogadores à venda para atrair interessados.</p>');
   }
+  if (tab === 'scout') return head + scoutView(S);
   if (tab === 'mine') {
     const ls = clubPlayers(g, uc.id).filter(p => p.listed);
     return head + (ls.length ? `<div class="list">${ls.map(p => playerRow(p, { sub: money(p.value) })).join('')}</div>` : '<p class="muted">Nenhum jogador à venda. Abra um jogador no Elenco e toque em "Pôr à venda".</p>');
@@ -707,6 +726,7 @@ export function moreScreen(S) {
     return `<div class="list stagger">
       ${it('go', 'whistle', 'Carreira do técnico', 'Metas, diretoria, propostas e troféus', 'data-to="career"')}
       ${it('go', 'medal', 'Prêmios', 'Melhor da liga e Melhor do Mundo', 'data-to="awards"', 'style="color:var(--gold);background:rgba(255,210,90,.12)"')}
+      ${it('go', 'globe', 'Seleções e Copa do Mundo', 'Ranking, convocações, Copa, Euro e Copa América', 'data-to="nations"', 'style="color:var(--accent2);background:rgba(46,230,255,.12)"')}
       ${it('go', 'coin', 'Finanças', 'Caixa, ingressos e extrato', 'data-to="finance"')}
     </div>
     <h3>Jogo salvo</h3>

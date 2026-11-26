@@ -58,8 +58,11 @@ const stageName = n => STAGE_NAMES[n] || `Fase de ${n}`;
 // ou reputação (primeira temporada)
 function leagueRanking(game, l) {
   const prev = game.lastTables && game.lastTables[l.id];
-  if (prev) return prev.filter(id => l.clubIds.includes(id));
-  return l.clubIds.slice().sort((a, b) => clubById(game, b).rep - clubById(game, a).rep);
+  const byRep = (a, b) => clubById(game, b).rep - clubById(game, a).rep;
+  if (!prev) return l.clubIds.slice().sort(byRep);
+  // quem estava na liga segue a tabela; quem acabou de subir entra depois, por reputação
+  const kept = prev.filter(id => l.clubIds.includes(id));
+  return kept.concat(l.clubIds.filter(id => !kept.includes(id)).sort(byRep));
 }
 
 // "Força" de uma liga: média de reputação dos 5 melhores clubes
@@ -95,8 +98,10 @@ export function createCups(game) {
   // 1) Copas nacionais
   const wn = scaleWeeks(W_NATIONAL, T);
   for (const l of game.leagues) {
-    if (l.clubIds.length < 4) continue;
-    const ranking = leagueRanking(game, l);
+    if (l.clubIds.length < 4 || l.tier === 2) continue;
+    // Copa nacional: clubes da 1ª e (se existir) da 2ª divisão do país
+    const lower = game.leagues.find(x => x.id === l.lowerId);
+    const ranking = leagueRanking(game, l).concat(lower ? leagueRanking(game, lower) : []);
     const cup = {
       id: 'N-' + l.id, type: 'national', leagueId: l.id, country: l.country,
       name: NATIONAL_NAMES[l.country] || `Copa nacional (${l.country})`,
@@ -124,7 +129,7 @@ export function createCups(game) {
   const wg = scaleWeeks(W_GROUPS, T), wk = scaleWeeks(W_KO, T);
   const taken = new Set(); // um clube joga só uma copa continental por temporada
   for (const def of CONTINENTAL.slice().sort((a, b) => a.tier - b.tier)) {
-    const leagues = game.leagues.filter(l => def.conts.includes(l.continent) && l.clubIds.length >= 4);
+    const leagues = game.leagues.filter(l => def.conts.includes(l.continent) && l.clubIds.length >= 4 && l.tier !== 2);
     const clubs = leagues.reduce((s, l) => s + l.clubIds.length, 0);
     if (!leagues.length || clubs < Math.max(16, def.minClubs || 0)) continue;
     if (def.tier > 1 && !cups.some(c => c.type === 'continental' && c.conts.join() === def.conts.join())) continue;

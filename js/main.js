@@ -17,6 +17,13 @@ import { awardsScreen } from './ui/awards-screen.js';
 import { PitchAnimator } from './ui/pitch-anim.js';
 import { icon } from './ui/icons.js';
 import { careerScreen } from './ui/career-screen.js';
+import { nationsScreen, squadModal } from './ui/nations-screen.js';
+import { negotiationModal, updateNegotiation, compareModal } from './ui/market-ui.js';
+import { negotiate, askingPrice, wageAsk } from './engine/market.js';
+import { startScouting, stopScouting } from './engine/scouting.js';
+
+// Sai do modo comparação
+function endCompare() { S.compareA = null; document.getElementById('compare-bar')?.remove(); }
 import { takeJob, searchJobs } from './engine/career.js';
 
 // ---------- Estado da aplicação ----------
@@ -39,7 +46,7 @@ const SCREENS = {
   start: SC.startScreen, chooseClub: SC.chooseClubScreen, hub: SC.hubScreen,
   squad: SC.squadScreen, tactics: SC.tacticsScreen, table: SC.tableScreen,
   market: SC.marketScreen, finance: SC.financeScreen, more: SC.moreScreen,
-  match: matchScreen, roundSummary: roundSummaryScreen, awards: awardsScreen, career: careerScreen
+  match: matchScreen, roundSummary: roundSummaryScreen, awards: awardsScreen, career: careerScreen, nations: nationsScreen
 };
 
 // Pergunta o nome do técnico ao começar um jogo novo (devolve null se cancelar)
@@ -82,7 +89,7 @@ function render(keepScroll = false) {
   const nav = document.getElementById('nav');
   nav.classList.toggle('hidden', hideNav);
   nav.innerHTML = `<div class="inner">${NAV.map(([k, ic, l]) =>
-    `<button class="${S.screen === k || (k === 'more' && (S.screen === 'finance' || S.screen === 'awards')) || (k === 'hub' && S.screen === 'career') ? 'on' : ''}" data-act="go" data-to="${k}">${icon(ic, 23)}${l}</button>`).join('')}</div>`;
+    `<button class="${S.screen === k || (k === 'more' && (S.screen === 'finance' || S.screen === 'awards' || S.screen === 'nations')) || (k === 'hub' && S.screen === 'career') ? 'on' : ''}" data-act="go" data-to="${k}">${icon(ic, 23)}${l}</button>`).join('')}</div>`;
   UI.animateCounts(app, money);
   if (keepScroll) window.scrollTo(0, y);
   // a tela da partida foi redesenhada: o animador se liga aos novos elementos
@@ -266,7 +273,7 @@ const ACTIONS = {
   go: d => {
     UI.closeModal();
     const params = {};
-    for (const k of ['tab', 'round', 'sort', 'cont', 'league', 'cup', 'view', 'season']) if (d[k] != null && d[k] !== '') params[k] = d[k];
+    for (const k of ['tab', 'round', 'sort', 'cont', 'league', 'cup', 'view', 'season', 't']) if (d[k] != null && d[k] !== '') params[k] = d[k];
     if (d.to === 'market' && !params.tab) params.tab = S.params.tab;
     go(d.to, params);
   },
@@ -291,6 +298,9 @@ const ACTIONS = {
     if (S.game.coach && S.game.coach.fired) return UI.toast('Você está sem clube. Escolha uma proposta.');
     playRound();
   },
+
+  // Seleções
+  nationSquad: d => UI.openModal(squadModal(S, d.id)),
 
   // Carreira do técnico
   acceptJob: async d => {
@@ -318,7 +328,52 @@ const ACTIONS = {
   }),
 
   // Jogador
-  player: d => showPlayer(d.id),
+  player: d => {
+    // modo comparação: o segundo jogador tocado abre a comparação
+    if (S.compareA && S.compareA !== d.id) {
+      const a = S.compareA; endCompare();
+      return UI.openModal(compareModal(S, a, d.id));
+    }
+    showPlayer(d.id);
+  },
+  compareStart: d => {
+    S.compareA = d.id;
+    UI.closeModal();
+    document.getElementById('compare-bar')?.remove();
+    const bar = document.createElement('div');
+    bar.id = 'compare-bar'; bar.className = 'compare-bar';
+    bar.innerHTML = `${icon('swap', 16)} <span>Comparando <b>${S.game.players[d.id].name}</b>: toque em outro jogador (Elenco, Mercado, Tabela…)</span><button class="btn-sm" data-act="compareCancel">Cancelar</button>`;
+    document.body.appendChild(bar);
+  },
+  compareCancel: () => endCompare(),
+
+  // Negociação
+  negotiate: d => {
+    const p = S.game.players[d.id], uc = userClub(S.game);
+    S.nego = { id: d.id, fee: p.clubId ? askingPrice(S.game, p) : 0, wage: wageAsk(S.game, p, uc), years: p.age >= 30 ? 2 : 3 };
+    UI.openModal(negotiationModal(S, d.id, S.nego));
+  },
+  negoYears: d => { S.nego.years = Number(d.v); S.nego.msg = null; UI.updateModal(negotiationModal(S, d.id, S.nego)); },
+  negoSend: d => {
+    const p = S.game.players[d.id];
+    const r = negotiate(S.game, p, S.nego.fee, S.nego.wage, S.nego.years);
+    if (r.status === 'accepted') { UI.closeModal(); UI.toast('✍️ ' + r.msg, 3500); autosave(); render(true); return; }
+    if (r.status === 'counter') { S.nego.fee = r.counterFee; S.nego.wage = r.counterWage; }
+    S.nego.msg = r.msg; S.nego.ok = false; S.nego.tries = r.triesLeft;
+    UI.updateModal(negotiationModal(S, d.id, S.nego));
+  },
+
+  // Treino individual
+  setPTrain: d => { const p = S.game.players[d.id]; p.trainFocus = d.v || null; autosave(); UI.updateModal(SC.playerModal(S, d.id)); },
+
+  // Olheiros
+  scoutForm: d => { S.scoutForm[d.k] = d.v; render(true); },
+  scoutStart: () => {
+    const f = S.scoutForm;
+    const r = startScouting(S.game, { region: f.region, pos: f.pos, profile: f.profile, weeks: Number(f.weeks) });
+    UI.toast('🔭 ' + r.msg + ' Os relatórios chegam a cada semana.', 3500); autosave(); render(true);
+  },
+  scoutStop: () => { stopScouting(S.game); UI.toast('Missão do olheiro encerrada.'); autosave(); render(true); },
   toggleList: d => { const p = S.game.players[d.id]; p.listed = !p.listed; result({ ok: true, msg: p.listed ? `${p.name} está à venda.` : `${p.name} saiu da lista de venda.` }, d.id); },
   renew: async d => {
     const p = S.game.players[d.id];
@@ -500,6 +555,14 @@ document.addEventListener('change', e => {
 let searchTimer;
 document.addEventListener('input', e => {
   const k = e.target.dataset.change;
+  // barras da negociação: atualiza a chance na hora
+  if (k === 'nego' && S.nego) {
+    if (e.target.id === 'ng-fee') S.nego.fee = Number(e.target.value);
+    if (e.target.id === 'ng-wage') S.nego.wage = Number(e.target.value);
+    S.nego.msg = null;
+    updateNegotiation(S, e.target.dataset.id, S.nego);
+    return;
+  }
   if (k !== 'marketSearch' && k !== 'clubSearch') return;
   clearTimeout(searchTimer);
   searchTimer = setTimeout(() => {

@@ -20,7 +20,12 @@ export const TRAIN_INTENSITY = {
 };
 
 // Escolhe qual atributo vai subir no treino
+// Atributos que podem ser escolhidos no treino individual
+export const INDIVIDUAL_TRAIN = { fin: 'Finalização', pas: 'Passe', def: 'Defesa', for: 'Força', res: 'Resistência', gk: 'Goleiro' };
+
 function attrToTrain(p, focus) {
+  // Treino individual: 75% das evoluções vão para o atributo escolhido
+  if (p.trainFocus && INDIVIDUAL_TRAIN[p.trainFocus] && rnd() < 0.75) return p.trainFocus;
   let keys = TRAIN_FOCUS[focus];
   if (keys) {
     keys = keys.filter(k => k !== 'gk' || p.pos === 'GOL');

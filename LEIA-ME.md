@@ -70,6 +70,19 @@ Assim o jogo funciona, mas só enquanto o PC estiver ligado. Para instalar de ve
   - **No mundo:** Melhor do Mundo, com pódio e top 10.
   - **Critério:** nota média, gols, assistências, títulos e nível do jogador; no prêmio mundial também conta a força da liga.
   - **Onde ver:** em **Mais → Prêmios**, com a corrida parcial durante a temporada e as premiações passadas, e na cerimônia ao fim de cada temporada.
+- **Segundas divisões** em 8 países: Série B, Primera Nacional, Championship, LaLiga 2, Serie B, 2. Bundesliga, Ligue 2 e Liga Portugal 2.
+  - Os nomes dos clubes são reais (lista de memória, pode estar desatualizada) e os elencos são **gerados** (jogadores marcados como fictícios).
+  - Há acesso e rebaixamento todo ano, e as copas nacionais incluem os clubes da 2ª divisão.
+  - Dá para começar a carreira num clube da 2ª divisão.
+- **Seleções nacionais:** ranking com 70+ seleções e convocação dos 26 melhores de cada país.
+  - **Copa do Mundo** com 32 seleções em 2030, 2034…
+  - **Eurocopa** e **Copa América** com 16 seleções em 2028, 2032…
+  - Os torneios acontecem nas férias entre uma temporada e outra, com artilharia, craque do torneio e convocados do seu clube. Tudo fica em Mais → Seleções.
+- **Mercado e elenco:**
+  - **Negociação:** valor, salário e anos de contrato ajustáveis, com chance de aceite ao vivo, contraproposta e no máximo 3 tentativas por semana.
+  - **Olheiros:** você escolhe região, posição, perfil e duração, e recebe relatórios semanais com o potencial revelado.
+  - **Comparar dois jogadores**, com os radares sobrepostos.
+  - **Treino individual** por jogador.
 - **Carreira do técnico** (Início → cartão do técnico, ou Mais → Carreira):
   - **Perfil:** seu nome, reputação de 0 a 100 e nível (Iniciante, Promissor, Experiente, Respeitado, Renomado, Elite, Lenda).
   - **Diretoria e Torcida:** dois medidores que mudam a cada jogo conforme o resultado comparado ao esperado. Vencer um time mais forte vale mais; perder para um mais fraco pesa mais.

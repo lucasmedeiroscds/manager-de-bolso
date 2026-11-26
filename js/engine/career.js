@@ -16,6 +16,7 @@ import { clamp, rnd, pick, newId } from '../util.js';
 import { teamStrength, autoLineup } from './tactics.js';
 import { clubById } from './market.js';
 import { standings } from './season.js';
+import { zoneSizes } from './divisions.js';
 
 export const LEVELS = [
   [0, 'Iniciante'], [25, 'Promissor'], [40, 'Experiente'], [55, 'Respeitado'],
@@ -58,17 +59,25 @@ export function setObjectives(game) {
   const n = L.clubIds.length;
   const ranked = L.clubIds.slice().sort((a, b) => clubById(game, b).rep - clubById(game, a).rep);
   const rk = ranked.indexOf(uc.id) + 1;            // 1 = elenco mais forte da liga
-  const bottomLine = n - Math.ceil(n / 5);          // fora da "zona" de baixo
+  // zona de rebaixamento real (se a liga tiver 2ª divisão) ou o último 1/5
+  const zs = zoneSizes(game, L.id);
+  const bottomLine = n - (zs && zs.relegate ? zs.relegate : Math.ceil(n / 5));
   let target = Math.max(1, Math.round(rk + n * 0.12));
   if (rk === 1) target = 2;
   target = Math.min(target, bottomLine);
   const objs = [];
-  const lt = target === 1 ? 'Ser campeão' : target <= 2 ? `Terminar entre os 2 primeiros` : target >= bottomLine ? `Não ficar entre os ${n - bottomLine} últimos (${bottomLine}º ou melhor)` : `Terminar entre os ${target} primeiros`;
+  let lt = target === 1 ? 'Ser campeão' : target <= 2 ? `Terminar entre os 2 primeiros` : target >= bottomLine ? `Não ficar entre os ${n - bottomLine} últimos (${bottomLine}º ou melhor)` : `Terminar entre os ${target} primeiros`;
+  if (zs && zs.relegate && target >= bottomLine) lt = `Escapar do rebaixamento (${bottomLine}º ou melhor)`;
+  if (zs && zs.promote) {
+    // 2ª divisão: clubes fortes têm de subir
+    if (rk <= zs.promote * 2) { target = zs.promote; lt = `Conseguir o acesso (terminar entre os ${zs.promote} primeiros)`; }
+  }
   objs.push({ id: 'L', kind: 'league', leagueId: L.id, target, text: `${L.name}: ${lt}`, weight: 3 });
   for (const cup of game.cups || []) {
     if (!cup.teams.includes(uc.id) || cup.type === 'world') continue;
     let stage;
-    if (cup.type === 'national') stage = rk <= Math.ceil(n * 0.2) ? 'Semifinal' : rk <= Math.ceil(n * 0.5) ? 'Quartas de final' : 'Oitavas de final';
+    if (cup.type === 'national') stage = L.tier === 2 ? (rk <= 3 ? 'Oitavas de final' : '16-avos de final')
+      : rk <= Math.ceil(n * 0.2) ? 'Semifinal' : rk <= Math.ceil(n * 0.5) ? 'Quartas de final' : 'Oitavas de final';
     else {
       const strongest = cup.teams.slice().sort((a, b) => clubById(game, b).rep - clubById(game, a).rep).indexOf(uc.id) + 1;
       stage = strongest <= cup.teams.length * 0.15 ? 'Semifinal' : strongest <= cup.teams.length * 0.4 ? 'Quartas de final' : cup.groups.length ? 'Oitavas de final' : 'Quartas de final';

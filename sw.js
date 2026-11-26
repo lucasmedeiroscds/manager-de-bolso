@@ -4,14 +4,15 @@
 // Ao mudar qualquer arquivo do jogo, aumente o número da VERSAO
 // para o celular baixar a versão nova.
 // =============================================================
-const VERSAO = 'manager-v10';
+const VERSAO = 'manager-v11';
 const ARQUIVOS = [
   './', './index.html', './manifest.webmanifest', './icon.svg', './icon-192.png', './icon-512.png',
   './css/style.css', './data/mundo.json',
   './js/main.js', './js/util.js', './js/storage.js',
   './js/data/generator.js', './js/data/importer.js', './js/data/world.js',
   './js/engine/ratings.js', './js/engine/tactics.js', './js/engine/match.js',
-  './js/engine/season.js', './js/engine/finance.js', './js/engine/market.js', './js/engine/evolution.js', './js/engine/cups.js', './js/engine/career.js', './js/ui/career-screen.js', './js/engine/awards.js', './js/ui/awards-screen.js', './js/ui/pitch-anim.js', './js/ui/icons.js',
+  './js/engine/season.js', './js/engine/finance.js', './js/engine/market.js', './js/engine/evolution.js', './js/engine/cups.js', './js/engine/career.js', './js/engine/divisions.js', './js/engine/nations.js', './js/engine/scouting.js',
+  './js/ui/nations-screen.js', './js/ui/market-ui.js', './js/ui/career-screen.js', './js/engine/awards.js', './js/ui/awards-screen.js', './js/ui/pitch-anim.js', './js/ui/icons.js',
   './js/ui/ui.js', './js/ui/screens.js', './js/ui/match-screen.js'
 ];
 

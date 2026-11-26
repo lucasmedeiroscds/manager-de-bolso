@@ -11,6 +11,7 @@ import { badge } from './ui.js';
 import { resultRow, tacticChips } from './screens.js';
 import { ceremonyBlock } from './awards-screen.js';
 import { reviewBlock } from './career-screen.js';
+import { nationalsBlock } from './nations-screen.js';
 import { icon } from './icons.js';
 
 const userTeam = (S, m) => m.teams.find(t => t.club.id === S.game.userClubId);
@@ -378,6 +379,7 @@ export function roundSummaryScreen(S) {
     <p class="small muted">Artilheiro: ${esc(r.seasonEnd.topScorer)}</p>
     ${r.seasonEnd.userCups && r.seasonEnd.userCups.length ? `<p><b>Seus títulos de copa: ${r.seasonEnd.userCups.map(esc).join(', ')} 🏆</b></p>` : ''}
   </div>
+  ${nationalsBlock(r.seasonEnd.nationals)}
   ${reviewBlock(r.seasonEnd.career)}
   ${ceremonyBlock(g, r.seasonEnd.awards)}
   <div>

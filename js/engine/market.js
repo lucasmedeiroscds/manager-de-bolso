@@ -53,6 +53,65 @@ export function wageAsk(game, p, club) {
 // ---------- Ações do usuário ----------
 // Todas devolvem { ok: true/false, msg: 'texto' }
 
+// ---------- Negociação interativa ----------
+// Chance de o clube vendedor e o jogador aceitarem uma proposta.
+// fee: valor da transferência; wage: salário semanal; years: anos de contrato
+export function negotiationChance(game, p, fee, wage, years) {
+  const user = clubById(game, game.userClubId);
+  const from = p.clubId ? clubById(game, p.clubId) : null;
+  const ask = askingPrice(game, p), wAsk = wageAsk(game, p, user);
+  // Clube: 0% abaixo de 80% do pedido; ~85% pagando o pedido; 100% a partir de ~104%
+  const club = !from ? 1 : Math.max(0, Math.min(1, (fee / ask - 0.8) / 0.235));
+  // Jogador: salário em relação ao que pede; anos de contrato; tamanho do clube
+  let player = Math.max(0, Math.min(1, (wage / wAsk - 0.78) / 0.26));
+  if (p.age >= 30 && years < 2) player *= 0.75;         // veterano quer segurança
+  if (p.age <= 23 && years >= 5) player *= 0.9;         // jovem não quer ficar preso
+  if (years >= 3 && p.age >= 30) player = Math.min(1, player * 1.12);
+  if (from && from.rep - user.rep > 12) player *= Math.max(0.35, 1 - (from.rep - user.rep - 12) / 30);
+  return { club, player, total: club * player, ask, wAsk };
+}
+
+// Envia a proposta. Devolve { status: 'accepted' | 'counter' | 'rejected' | 'error', msg, ... }
+export function negotiate(game, p, fee, wage, years) {
+  const user = clubById(game, game.userClubId);
+  if (!windowOpen(game) && p.clubId) return { status: 'error', msg: 'A janela de transferências está fechada.' };
+  if (clubPlayers(game, user.id).length >= MAX_SQUAD) return { status: 'error', msg: `Elenco cheio (máx. ${MAX_SQUAD}).` };
+  if (p.loan) return { status: 'error', msg: 'Jogador emprestado não pode ser negociado agora.' };
+  if (p.negoBlock && p.negoBlock.until >= game.round && p.negoBlock.season === game.season) return { status: 'error', msg: `O clube encerrou as conversas. Tente de novo na semana ${p.negoBlock.until + 2}.` };
+  const signing = p.clubId ? 0 : wage * 4;
+  const total = (p.clubId ? fee : 0) + signing;
+  if (user.budget < total) return { status: 'error', msg: `Dinheiro insuficiente: você precisa de ${money(total)}.` };
+  const ch = negotiationChance(game, p, fee, wage, years);
+  p.negoTries = (p.negoTries && p.negoTries.season === game.season && p.negoTries.round === game.round) ? p.negoTries : { season: game.season, round: game.round, n: 0 };
+  p.negoTries.n++;
+  if (rnd() < ch.total) {
+    const from = p.clubId ? clubById(game, p.clubId) : null;
+    if (from) { addTx(game, user.id, `Compra de ${p.name}`, -fee); addTx(game, from.id, `Venda de ${p.name}`, fee); }
+    if (signing) addTx(game, user.id, `Luvas de ${p.name}`, -signing);
+    move(game, p, user.id);
+    p.contract = { wage: Math.round(wage / 100) * 100, years };
+    p.listed = false; p.moral = 75; delete p.negoTries; delete p.negoBlock;
+    news(game, `${user.name} contrata ${p.name}${from ? ` do ${from.name} por ${money(fee)}` : ' (estava sem clube)'}.`);
+    return { status: 'accepted', msg: `Negócio fechado! ${p.name} é o novo reforço.` };
+  }
+  // Recusou: 3 tentativas na mesma semana e o clube encerra as conversas
+  if (p.negoTries.n >= 3) {
+    p.negoBlock = { season: game.season, until: game.round + 3 };
+    return { status: 'rejected', msg: 'Sem acordo. O clube cansou de negociar e encerrou as conversas por algumas semanas.' };
+  }
+  // Contraproposta de quem estiver mais longe de aceitar
+  const counterFee = ch.club < 0.85 ? Math.round(ch.ask * (0.98 + rnd() * 0.1) / 10000) * 10000 : fee;
+  const counterWage = ch.player < 0.85 ? Math.round(ch.wAsk * (1.02 + rnd() * 0.08) / 100) * 100 : wage;
+  const who = p.clubId && ch.club < ch.player ? `O ${clubById(game, p.clubId).name}` : p.name;
+  if (counterFee === fee && counterWage === wage) {
+    return { status: 'counter', counterFee, counterWage, triesLeft: 3 - p.negoTries.n, msg: `Quase! Eles hesitaram. Tente de novo ou melhore um pouco a proposta.` };
+  }
+  return {
+    status: 'counter', counterFee, counterWage, triesLeft: 3 - p.negoTries.n,
+    msg: `${who} recusou, mas aceitaria ${p.clubId && counterFee !== fee ? `transferência de ${money(counterFee)}` : ''}${p.clubId && counterFee !== fee && counterWage !== wage ? ' e ' : ''}${counterWage !== wage ? `salário de ${money(counterWage)}/sem` : ''}.`
+  };
+}
+
 export function buyPlayer(game, p, offer) {
   const user = clubById(game, game.userClubId);
   if (!windowOpen(game)) return { ok: false, msg: 'A janela de transferências está fechada.' };
