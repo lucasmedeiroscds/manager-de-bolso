@@ -29,7 +29,7 @@ http.createServer((req, res) => {
     res.end(data);
   });
 }).listen(PORT, '0.0.0.0', () => {
-  console.log(`\n⚽ Manager de Bolso rodando!`);
+  console.log(`\n⚽ Estratégia FC rodando!`);
   console.log(`   No PC:      http://localhost:${PORT}`);
   for (const list of Object.values(os.networkInterfaces())) {
     for (const i of list || []) if (i.family === 'IPv4' && !i.internal) console.log(`   No celular: http://${i.address}:${PORT}  (mesmo Wi-Fi)`);

@@ -1,13 +1,13 @@
 {
-  "name": "Manager de Bolso",
-  "short_name": "Manager",
+  "name": "Estratégia FC",
+  "short_name": "Estratégia FC",
   "description": "Jogo de gerenciamento de futebol. Funciona offline.",
   "start_url": "./index.html",
   "scope": "./",
   "display": "standalone",
   "orientation": "portrait",
-  "background_color": "#0d1a12",
-  "theme_color": "#0d1a12",
+  "background_color": "#050d1f",
+  "theme_color": "#050d1f",
   "lang": "pt-BR",
   "icons": [
     { "src": "icon.svg", "sizes": "any", "type": "image/svg+xml", "purpose": "any" },

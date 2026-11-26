@@ -67,6 +67,29 @@ export class Match {
     this.talkFx = [{}, {}]; // efeito da conversa do técnico (preleção/intervalo) em cada time
     this.wasBehind = [false, false];
     this._pm = [0, 0];
+    this.instr = ['normal', 'normal']; // instrução ao vivo de cada time (ver INSTR)
+    this.mine = this.teams.some(t => t.club.id === this.userClubId); // jogo do usuário: ganha narração detalhada
+  }
+
+  // ---------- Instruções durante o jogo ----------
+  setInstr(side, key, silent) {
+    if (!INSTR[key] || this.instr[side] === key) return;
+    this.instr[side] = key;
+    this.dirty = true;
+    if (!silent) this.log('instr', side, `📣 ${this.teams[side].club.short} ${INSTR[key].say}`);
+  }
+  // IA muda a postura conforme placar e tempo
+  aiInstr() {
+    for (let i = 0; i < 2; i++) {
+      const t = this.teams[i];
+      if (t.club.id === this.userClubId) continue;
+      const d = t.goals - this.teams[1 - i].goals;
+      let k = 'normal';
+      if (this.minute >= 70 && d < 0) k = this.minute >= 82 ? 'tudo' : 'pressao';
+      else if (this.minute >= 75 && d > 0) k = 'segurar';
+      else if (d >= 2) k = 'contra';
+      this.setInstr(i, k);
+    }
   }
 
   // ---------- Conversa do técnico (preleção e intervalo) ----------
@@ -215,9 +238,11 @@ export class Match {
       if (slot === 'GOL') gk = r;
     }
     const h = t.isHome ? K.HOME : 1;
-    const fx = (this.talkFx && this.talkFx[this.teams ? this.teams.indexOf(t) : -1]) || {}; // conversa do técnico
+    const ti = this.teams ? this.teams.indexOf(t) : -1;
+    const fx = (this.talkFx && this.talkFx[ti]) || {}; // conversa do técnico
+    const ins = INSTR[(this.instr && this.instr[ti]) || 'normal'];
     return {
-      att: att * st.att * h * (fx.att || 1), mid: mid * st.mid * h * (fx.mid || 1), def: def * st.def * mk.def * (fx.def || 1), gk,
+      att: att * st.att * h * (fx.att || 1) * ins.att, mid: mid * st.mid * h * (fx.mid || 1) * ins.mid, def: def * st.def * mk.def * (fx.def || 1) * ins.def, gk,
       cenShare: cen / ((cen + wide) || 1),                 // ~0,5 em formações equilibradas
       pas: pas / Math.max(1, t.onField.length)
     };
@@ -271,8 +296,9 @@ export class Match {
       // Investida de ataque?
       if (rnd() < K.ATTACK * 2 * share[i]) this.attack(i, t, o, s[i], s[1 - i]);
       // Falta / cartão (marcação pesada faz mais faltas)
-      const cf = mk.fouls * (this.talkFx[i].cards || 1);
-      if (rnd() < 0.13 * mk.fouls) t.stats.fouls++;
+      const fi = INSTR[this.instr[i]].fouls;
+      const cf = mk.fouls * (this.talkFx[i].cards || 1) * fi;
+      if (rnd() < 0.13 * mk.fouls * fi) t.stats.fouls++;
       if (rnd() < K.YELLOW * cf) this.card(i, t, false);
       else if (rnd() < K.RED * cf) this.card(i, t, true);
       // Lesão
@@ -281,6 +307,9 @@ export class Match {
 
     this.tire();
     this.aiSubs();
+    if (this.minute % 5 === 0) this.aiInstr();
+    // Narração do jogo corrido (minuto sem lance) — só no jogo do usuário
+    if (this.mine && this.events.length === before && rnd() < 0.35) this.flow();
 
     // Pressão do minuto (para o gráfico): ataques, chutes e posse
     this.pressure.push(this._pm[0] - this._pm[1] + (this.poss === 0 ? 0.3 : -0.3));
@@ -335,6 +364,9 @@ export class Match {
     const spot = { x: clamp(50 + (rnd() - 0.5) * (24 + dist * 130), 8, 92), d: dist };
     const shot = { side: i, min: this.minute, x: spot.x, d: spot.d, res: 'miss', id: shooter.id };
     this.shots.push(shot);
+    // Narração da jogada que leva ao chute (só no jogo do usuário)
+    const mates = this.mine ? t.onField.filter(x => x.id !== sh.id && x.slot !== 'GOL') : [];
+    if (mates.length && rnd() < 0.8) this.log('play', i, pick(BUILD)(this.P(pick(mates).id).name, shooter.name));
 
     const fin = shooter.attrs.fin * (0.65 + 0.35 * shooter.fitness / 100);
     const onTarget = rnd() < clamp(K.ON_TARGET * (0.5 + q) * (0.6 + fin / 175), 0.1, 0.8);
@@ -368,6 +400,19 @@ export class Match {
       if (rnd() < 0.3) t.stats.corners++;
       this.log('save', i, pick(SAVE)(shooter.name, gk ? gk.name : 'o goleiro')).spot = spot;
     }
+  }
+
+  // Frase de jogo corrido (posse, toques, faltas) — muda com a instrução
+  flow() {
+    const i = this.poss, t = this.teams[i], o = this.teams[1 - i];
+    const field = t.onField.filter(x => x.slot !== 'GOL'), od = o.onField.filter(x => x.slot !== 'GOL');
+    if (!field.length || !od.length) return;
+    const ins = this.instr[i];
+    const pool = FLOW.slice();
+    if (ins === 'segurar') pool.push(...FLOW_HOLD, ...FLOW_HOLD);
+    if (ins === 'pressao' || ins === 'tudo') pool.push(...FLOW_PUSH, ...FLOW_PUSH);
+    if (ins === 'contra') pool.push(...FLOW_COUNTER, ...FLOW_COUNTER);
+    this.log('play', i, pick(pool)(this.P(pick(field).id).name, this.P(pick(od).id).name, t.club.name, o.club.name));
   }
 
   card(i, t, directRed) {
@@ -464,7 +509,7 @@ export class Match {
         // (e não depende da resistência, que é baixa no cadastro de goleiros)
         const loss = slot === 'GOL'
           ? K.TIRE * 0.22
-          : K.TIRE * st.tire * mk.tire * (this.talkFx[this.teams.indexOf(t)].tire || 1) * (1.4 - p.attrs.res / 100);
+          : K.TIRE * st.tire * mk.tire * (this.talkFx[this.teams.indexOf(t)].tire || 1) * INSTR[this.instr[this.teams.indexOf(t)]].tire * (1.4 - p.attrs.res / 100);
         p.fitness = Math.max(10, p.fitness - loss);
       }
     }
@@ -553,7 +598,53 @@ export class Match {
   }
 }
 
+// ---- Instruções durante o jogo ----
+// Multiplicadores sobre ataque/meio/defesa, cansaço e faltas
+export const INSTR = {
+  normal:  { label: 'Normal', att: 1, mid: 1, def: 1, tire: 1, fouls: 1, say: 'volta a jogar no padrão.', tip: 'Segue a tática escolhida.' },
+  pressao: { label: 'Pressionar', att: 1.04, mid: 1.07, def: 0.96, tire: 1.3, fouls: 1.3, say: 'adianta a marcação e pressiona a saída de bola!', tip: 'Mais domínio, mais cansaço e faltas.' },
+  contra:  { label: 'Contra-ataque', att: 1.08, mid: 0.93, def: 1.04, tire: 1.05, fouls: 1, say: 'recua as linhas e aposta no contra-ataque.', tip: 'Menos posse, ataques mais perigosos.' },
+  segurar: { label: 'Segurar', att: 0.8, mid: 1, def: 1.13, tire: 0.85, fouls: 1.1, say: 'fecha a defesa para segurar o resultado.', tip: 'Defesa forte, quase não ataca. Poupa energia.' },
+  tudo:    { label: 'Tudo ao ataque', att: 1.16, mid: 1.03, def: 0.85, tire: 1.25, fouls: 1.1, say: 'manda todo mundo para o ataque!', tip: 'Ataque máximo, defesa muito exposta.' }
+};
+
 // ---- Frases de narração ----
+const BUILD = [
+  (a, b) => `${a} lança ${b} na corrida...`,
+  (a, b) => `${a} cruza na área, ${b} aparece...`,
+  (a, b) => `Tabelinha entre ${a} e ${b} na entrada da área...`,
+  (a, b) => `${a} rouba a bola e acha ${b} livre...`,
+  (a, b) => `${b} recebe de ${a} e ajeita para o chute...`,
+  (a, b) => `${a} vai à linha de fundo e rola para ${b}...`,
+  (a, b) => `Escanteio cobrado por ${a}, ${b} sobe...`,
+  (a, b) => `${b} invade a área driblando...`
+];
+const FLOW = [
+  (p, d, c) => `O ${c} troca passes no meio-campo, ${p} comanda.`,
+  (p, d) => `${d} chega firme e ${p} perde a bola.`,
+  (p, d) => `Falta de ${d} em ${p}. O juiz marca.`,
+  (p) => `${p} tenta o lançamento longo, a bola sai pela lateral.`,
+  (p, d) => `${p} carrega pela ponta, mas ${d} acompanha bem.`,
+  (p, d, c) => `O ${c} roda a bola procurando espaço.`,
+  (p, d) => `Dividida forte entre ${p} e ${d}.`,
+  (p) => `${p} tenta o drible e é desarmado.`,
+  (p, d, c, oc) => `O ${oc} se fecha bem, o ${c} não acha brechas.`,
+  (p) => `Bola parada: ${p} cruza, mas a zaga afasta.`
+];
+const FLOW_HOLD = [
+  (p, d, c) => `O ${c} gira a bola na defesa, sem pressa nenhuma.`,
+  (p) => `${p} segura a bola perto da bandeirinha. A torcida rival vaia!`,
+  (p, d, c) => `Todo o time do ${c} atrás da linha da bola.`
+];
+const FLOW_PUSH = [
+  (p, d, c, oc) => `O ${c} sufoca o ${oc} no campo de defesa!`,
+  (p, d) => `${p} pressiona a saída de bola e ${d} se enrola.`,
+  (p, d, c) => `O ${c} vem com tudo, a torcida empurra!`
+];
+const FLOW_COUNTER = [
+  (p, d, c) => `O ${c} espera o adversário para sair rápido.`,
+  (p) => `${p} puxa o contragolpe em velocidade!`
+];
 const MISS = [
   (p) => `${p} arrisca de fora da área... por cima do gol!`,
   (p) => `${p} recebe na área e chuta para fora. Que chance!`,

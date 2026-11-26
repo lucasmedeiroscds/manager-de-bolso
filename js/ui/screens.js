@@ -51,8 +51,12 @@ export function startScreen(S) {
   const kinds = [['world', '🌍 Mundo real'], ['fictional', '🎲 Liga fictícia'], ...(S.customDB ? [['custom', '📥 Importado']] : [])];
   return `
   <div class="splash">
-    <div class="ballart"></div>
-    <h1>Manager de Bolso</h1>
+    <svg class="crest" viewBox="0 0 100 112" aria-hidden="true"><defs><linearGradient id="cg" x1="0" y1="0" x2="0" y2="1"><stop offset="0" stop-color="#ffe58a"/><stop offset=".55" stop-color="#d79a1e"/><stop offset="1" stop-color="#ffd34d"/></linearGradient><linearGradient id="cb" x1="0" y1="0" x2="0" y2="1"><stop offset="0" stop-color="#1c4f9c"/><stop offset="1" stop-color="#071a3c"/></linearGradient></defs>
+      <path d="M50 3 L94 16 V54 C94 82 74 100 50 109 C26 100 6 82 6 54 V16 Z" fill="url(#cg)"/><path d="M50 10 L87 21 V54 C87 78 70 94 50 102 C30 94 13 78 13 54 V21 Z" fill="url(#cb)"/>
+      <path d="M50 18 l3 6.5 7 .6-5.3 4.6 1.6 6.8-6.3-3.7-6.3 3.7 1.6-6.8-5.3-4.6 7-.6z" fill="#ffd34d"/>
+      <circle cx="50" cy="66" r="20" fill="#f4f7fb"/><path d="M50 56 l9.5 6.9-3.6 11.1h-11.8l-3.6-11.1z" fill="#0b1f45"/><path d="M50 46v10M59.5 62.9l9-4M55.9 74l6 7.5M44.1 74l-6 7.5M40.5 62.9l-9-4" stroke="#0b1f45" stroke-width="2.2"/></svg>
+    <h1><span class="logo-a">Estratégia</span><span class="logo-b">FC</span></h1>
+    <div class="logo-sub">GESTÃO DE EQUIPE</div>
     <p class="muted">31 ligas · 42 copas · 15 mil jogadores reais</p>
   </div>
   ${auto ? `<button class="btn-main mb" data-act="continue" style="flex-direction:column;gap:0;min-height:68px">

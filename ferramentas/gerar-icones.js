@@ -28,7 +28,7 @@ function chunk(type, data) {
 
 function draw(size) {
   const s = size / 512; // desenho feito em escala 512
-  const BG = [13, 26, 18], FIELD = [28, 90, 46], LINE = [233, 243, 236], BALL = [245, 196, 0];
+  const BG = [5, 13, 31], FIELD = [16, 44, 92], LINE = [245, 197, 66], BALL = [244, 247, 251];
   const raw = Buffer.alloc((size * 4 + 1) * size);
   for (let y = 0; y < size; y++) {
     raw[y * (size * 4 + 1)] = 0;

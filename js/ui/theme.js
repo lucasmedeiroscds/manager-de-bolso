@@ -5,7 +5,7 @@
 // brilho para ficar legível no fundo escuro. Clubes preto e branco
 // ficam com destaque prateado. A cor vira a variável --accent do CSS.
 // =============================================================
-const DEFAULT = { accent: '#c4ff3d', rgb: '196, 255, 61', hi: '#e2ff7a', lo: '#8ef000', text: '#0b1400' };
+const DEFAULT = { accent: '#f5c542', rgb: '245, 197, 66', hi: '#ffdf7e', lo: '#c9921c', text: '#1a1100' };
 let current = '';
 
 // Converte qualquer cor CSS (#hex, hsl(), nome) em [r, g, b]
@@ -65,5 +65,5 @@ export function applyTheme(club) {
   r.setProperty('--accent-lo', t.lo);
   r.setProperty('--accent-text', t.text);
   const meta = document.querySelector('meta[name=theme-color]');
-  if (meta) meta.content = '#050a12';
+  if (meta) meta.content = '#050d1f';
 }

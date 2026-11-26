@@ -16,7 +16,7 @@ export function settingsScreen(S) {
 
   <div class="section-title"><h3>${icon('palette', 15)} Tema</h3></div>
   <div class="card">
-    <div class="chips">${chip('theme', 'club', 'Cores do meu clube')}${chip('theme', 'default', 'Padrão (verde-limão)')}</div>
+    <div class="chips">${chip('theme', 'club', 'Cores do meu clube')}${chip('theme', 'default', 'Padrão (azul e dourado)')}</div>
     ${uc ? `<div class="row mt" style="gap:12px">${badge(uc, 'lg')}
       <div class="grow"><b>${esc(uc.name)}</b><div class="small muted">Destaque do tema: <span class="swatch" style="background:${preview.accent}"></span> ${preview.accent}</div>
       <div class="tiny muted">A cor é ajustada para ficar legível no fundo escuro. Clubes preto e branco ficam com destaque prateado.</div></div></div>` :

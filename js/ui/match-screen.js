@@ -13,6 +13,7 @@ import { ceremonyBlock } from './awards-screen.js';
 import { reviewBlock } from './career-screen.js';
 import { nationalsBlock } from './nations-screen.js';
 import { icon } from './icons.js';
+import { INSTR } from '../engine/match.js';
 
 const userTeam = (S, m) => m.teams.find(t => t.club.id === S.game.userClubId);
 const oppTeam = (S, m) => m.teams.find(t => t.club.id !== S.game.userClubId);
@@ -121,9 +122,22 @@ function statsHTML(m) {
 }
 
 function feedHTML(S, m) {
-  const evs = m.events.filter(e => e.type !== 'chance' && e.type !== 'tackle' || S.matchVerbose).slice().reverse();
-  return `<label class="small row" style="margin:0 0 8px"><input type="checkbox" style="width:auto;min-height:0" data-change="verbose" ${S.matchVerbose ? 'checked' : ''}> mostrar todos os lances</label>
+  // Narração completa por padrão; a caixinha deixa só os lances importantes
+  const minor = ['chance', 'tackle', 'play'];
+  const evs = m.events.filter(e => !S.matchVerbose || !minor.includes(e.type)).slice().reverse();
+  return `<label class="small row" style="margin:0 0 8px"><input type="checkbox" style="width:auto;min-height:0" data-change="verbose" ${S.matchVerbose ? 'checked' : ''}> só os lances importantes</label>
   ${evs.map(e => `<div class="ev ${e.type}"><span class="m">${e.min}'</span>${esc(e.text)}</div>`).join('')}`;
+}
+
+// Botões de instrução ao vivo (postura do time)
+function instrHTML(S, m) {
+  if (m.finished) return '';
+  const side = m.teams.findIndex(t => t.club.id === S.game.userClubId);
+  const cur = m.instr[side];
+  const ic = { normal: 'target', pressao: 'fire', contra: 'bolt', segurar: 'shield', tudo: 'star' };
+  return `<div class="instr" id="mx-instr">${Object.entries(INSTR).map(([k, v]) =>
+    `<button class="${cur === k ? 'on' : ''}" data-act="matchInstr" data-v="${k}">${icon(ic[k], 15)}${v.label}</button>`).join('')}</div>
+  <div class="tiny muted instr-tip" id="mx-instr-tip">${esc(INSTR[cur].tip)}</div>`;
 }
 
 // Notas dos jogadores (depois do apito final)
@@ -150,8 +164,8 @@ function scorersLine(t) {
   return t.scorers.map(s => `⚽ ${s.min}'`).join(' ');
 }
 
-function lastBigEvent(m) {
-  const e = [...m.events].reverse().find(x => ['goal', 'red', 'yellow', 'injury', 'sub', 'save', 'half', 'end', 'info', 'pen', 'color', 'talk'].includes(x.type));
+function lastBigEvent(m, skipGoal) {
+  const e = [...m.events].reverse().find(x => !(skipGoal && (x.type === 'goal' || x.min === m.minute && x.type === 'color')) && ['goal', 'red', 'yellow', 'injury', 'sub', 'save', 'half', 'end', 'info', 'pen', 'color', 'talk', 'play', 'instr', 'chance'].includes(x.type));
   return e ? `<span class="m">${e.min}'</span> ${esc(e.text)}` : '';
 }
 
@@ -178,6 +192,7 @@ export function matchScreen(S) {
   <div class="momentum" style="--h1:${col(h.club)};--a1:${col(a.club)}">${momentumHTML(m)}</div>
   <div class="press-wrap" id="mx-press" style="--h1:${col(h.club)};--a1:${col(a.club)}">${pressureSVG(m)}</div>
   <div class="ticker" id="mx-ticker">${lastBigEvent(m)}</div>
+  ${instrHTML(S, m)}
   <div class="tabs">
     ${[['campo', 'pitch', 'Campo'], ['lances', 'list', 'Lances'], ['numeros', 'chart', 'Números']].map(([k, ic, l]) =>
       `<button class="${tab === k ? 'on' : ''}" data-act="matchTab" data-v="${k}">${icon(ic, 17)} ${l}</button>`).join('')}
@@ -337,8 +352,12 @@ export function patchMatch(S, newEvents) {
     if (tk.innerHTML !== tkHtml) { tk.innerHTML = tkHtml; tk.classList.remove('pop'); void tk.offsetWidth; tk.classList.add('pop'); }
     if (goal) { const sb = $('mx-scoreboard'); sb.classList.remove('flash'); void sb.offsetWidth; sb.classList.add('flash'); }
   };
-  if (goal && tab === 'campo' && S.anim && !m.finished) S.revealGoal = reveal;
-  else reveal();
+  if (goal && tab === 'campo' && S.anim && !m.finished) {
+    S.revealGoal = reveal;
+    // enquanto a bola não entra, o letreiro narra a jogada
+    const tk = $('mx-ticker');
+    if (tk) tk.innerHTML = lastBigEvent(m, true);
+  } else reveal();
   // barra de posse
   const tot = h.stats.poss + a.stats.poss;
   const ph = tot ? Math.round(h.stats.poss / tot * 100) : 50;

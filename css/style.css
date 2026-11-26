@@ -4,21 +4,21 @@
    títulos condensados em itálico e muitas micro-animações.
    ============================================================= */
 :root {
-  --bg0: #050a12;
-  --bg1: #0a1322;
-  --bg2: #0f1c30;
-  --glass: rgba(255, 255, 255, .045);
-  --glass2: rgba(255, 255, 255, .08);
-  --line: rgba(255, 255, 255, .09);
-  --line2: rgba(255, 255, 255, .16);
+  --bg0: #050d1f;
+  --bg1: #0a1a38;
+  --bg2: #10264d;
+  --glass: rgba(120, 165, 255, .06);
+  --glass2: rgba(120, 165, 255, .11);
+  --line: rgba(140, 180, 255, .13);
+  --line2: rgba(140, 180, 255, .22);
   --text: #eef3fb;
-  --muted: #8b9bb4;
-  --accent: #c4ff3d;            /* destaque (verde-limão ou a cor do seu clube) */
-  --accent-rgb: 196, 255, 61;   /* o mesmo destaque em números, para transparências */
-  --accent-hi: #e2ff7a;         /* versão mais clara */
-  --accent-lo: #8ef000;         /* versão mais escura */
-  --accent2: #2ee6ff;           /* ciano */
-  --accent-text: #0b1400;
+  --muted: #8fa3c7;
+  --accent: #f5c542;            /* destaque (dourado ou a cor do seu clube) */
+  --accent-rgb: 245, 197, 66;   /* o mesmo destaque em números, para transparências */
+  --accent-hi: #ffdf7e;         /* versão mais clara */
+  --accent-lo: #c9921c;         /* versão mais escura */
+  --accent2: #3fa9ff;           /* azul */
+  --accent-text: #1a1100;
   --good: #2fe07f;
   --bad: #ff4d6d;
   --warn: #ffb547;
@@ -38,7 +38,7 @@ body {
   font-family: var(--body); font-size: 15px; line-height: 1.4;
   overscroll-behavior-y: none; -webkit-font-smoothing: antialiased;
   background:
-    radial-gradient(1200px 600px at 110% -10%, rgba(46, 230, 255, .10), transparent 60%),
+    radial-gradient(1200px 600px at 110% -10%, rgba(63, 169, 255, .16), transparent 60%),
     radial-gradient(900px 500px at -20% 10%, rgba(var(--accent-rgb), .08), transparent 60%),
     linear-gradient(180deg, var(--bg1), var(--bg0) 60%);
   background-attachment: fixed;
@@ -392,7 +392,11 @@ label { display: block; font-size: 12px; color: var(--muted); margin: 10px 0 5px
 }
 .splash .ballart::before { content: ""; position: absolute; inset: 30%; background: #182234; clip-path: polygon(50% 0, 100% 38%, 82% 100%, 18% 100%, 0 38%); }
 @keyframes float { 50% { transform: translateY(-10px) rotate(8deg); } }
-.splash h1 { font-size: 38px; margin-bottom: 4px; background: linear-gradient(90deg, #fff, var(--accent)); -webkit-background-clip: text; background-clip: text; color: transparent; }
+.splash h1 { margin: 0; line-height: .95; font-size: 46px; font-style: italic; letter-spacing: .5px; text-transform: uppercase; }
+.logo-a { display: block; background: linear-gradient(180deg, #e9f3ff 0%, #7fc0ff 45%, #1f6fd1 55%, #9fd2ff 100%); -webkit-background-clip: text; background-clip: text; color: transparent; filter: drop-shadow(0 3px 0 #06183a) drop-shadow(0 0 18px rgba(63, 169, 255, .35)); }
+.logo-b { display: block; font-size: 54px; background: linear-gradient(180deg, #fff6cf 0%, #ffd34d 45%, #c98a12 58%, #ffe58a 100%); -webkit-background-clip: text; background-clip: text; color: transparent; filter: drop-shadow(0 3px 0 #3a2603) drop-shadow(0 0 18px rgba(245, 197, 66, .35)); }
+.logo-sub { font-family: var(--head); font-style: italic; font-weight: 800; letter-spacing: 3px; font-size: 12px; color: var(--accent); margin: 6px 0 4px; }
+.splash .crest { width: 96px; height: 108px; margin: 0 auto 12px; animation: float 4s ease-in-out infinite; filter: drop-shadow(0 0 24px rgba(245, 197, 66, .35)); }
 
 /* ---------- Carta do jogador ---------- */
 .pcard {
@@ -711,3 +715,12 @@ input[type=range]::-moz-range-thumb { width: 26px; height: 26px; border-radius: 
 /* tela de jogo maior (tablet/PC): mais respiro */
 @media (min-width: 700px) { #app { padding-top: 22px; } }
 @media (prefers-reduced-motion: reduce) { *, *::before, *::after { animation: none !important; transition: none !important; } }
+
+/* Instruções ao vivo */
+.instr { display: flex; gap: 6px; overflow-x: auto; margin: 8px 0 2px; scrollbar-width: none; }
+.instr::-webkit-scrollbar { display: none; }
+.instr button { flex: 0 0 auto; display: inline-flex; align-items: center; gap: 5px; padding: 7px 11px; min-height: 0; font-size: 13px; border-radius: 999px; background: var(--glass); border: 1px solid var(--line2); color: var(--text); }
+.instr button.on { background: rgba(var(--accent-rgb), .22); border-color: var(--accent); color: var(--accent); font-weight: 700; }
+.instr-tip { margin: 2px 2px 6px; }
+.ev.play { border-color: transparent; background: none; color: var(--muted); padding: 4px 12px; font-size: 13px; }
+.ev.instr { border-color: var(--accent); }

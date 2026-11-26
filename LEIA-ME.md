@@ -1,4 +1,4 @@
-# Manager de Bolso
+# Estratégia FC
 
 Jogo de gerenciamento de futebol no estilo clássico, com menus e texto. Roda no navegador do celular e funciona offline depois de instalado.
 

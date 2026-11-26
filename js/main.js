@@ -7,6 +7,7 @@ import { importJSON, importCSV, exportJSON, exportCSV } from './data/importer.js
 import { createGame, userClub, userLeague, prepareRound, finishRound, nextUserMatch } from './engine/season.js';
 import { FORMATIONS, autoLineup } from './engine/tactics.js';
 import { overall, marketValue } from './engine/ratings.js';
+import { INSTR } from './engine/match.js';
 import { buyPlayer, loanIn, loanOut, renewContract, releasePlayer, acceptOffer, rejectOffer } from './engine/market.js';
 import { saveGame, loadGame, downloadFile, pickFile, migrate, saveCustomDB, loadCustomDB } from './storage.js';
 import { clamp, money } from './util.js';
@@ -28,8 +29,10 @@ import { settingsScreen } from './ui/settings-screen.js';
 
 // Preferências de tema e som
 function loadSettings() {
-  let s = { theme: 'club', sfx: true, crowd: true, volume: 0.7 };
+  let s = { theme: 'default', sfx: true, crowd: true, volume: 0.7 };
   try { s = { ...s, ...JSON.parse(localStorage.getItem('brasfoot_settings') || '{}') }; } catch { /* padrão */ }
+  // Nova identidade (v15): todos começam no azul e dourado; dá para voltar às cores do clube nos Ajustes
+  if (!s.v15) { s.theme = 'default'; s.v15 = true; }
   Sound.loadSoundSettings({ sfx: s.sfx, crowd: s.crowd, volume: s.volume });
   return s;
 }
@@ -341,7 +344,7 @@ const ACTIONS = {
     saveSettings();
     if (d.k === 'crowd' && !S.settings.crowd) Sound.crowdStop();
     render(true);
-    if (d.k === 'theme') UI.toast(S.settings.theme === 'club' ? '🎨 Tema nas cores do seu clube!' : 'Tema padrão aplicado.');
+    if (d.k === 'theme') UI.toast(S.settings.theme === 'club' ? '🎨 Tema nas cores do seu clube!' : 'Tema azul e dourado aplicado.');
   },
   testSound: d => { Sound.unlock(); ({ whistle: () => Sound.whistle(2), goal: Sound.goal, ooh: Sound.ooh })[d.v](); },
   // botão de som na partida (liga/desliga tudo)
@@ -525,6 +528,14 @@ const ACTIONS = {
   matchSpeed: () => { S.matchSpeed = (S.matchSpeed + 1) % 3; if (S.matchRunning) startMatchLoop(); render(true); },
   matchSkip: () => { stopMatchLoop(); S.subOut = null; for (const x of S.prep.matches) x.runToEnd(); render(); },
   matchTab: d => { S.matchTab = d.v; render(true); },
+  matchInstr: d => {
+    const m = S.prep.userMatch;
+    if (m.finished) return;
+    m.setInstr(m.teams.findIndex(t => t.club.id === S.game.userClubId), d.v);
+    document.querySelectorAll('#mx-instr button').forEach(b => b.classList.toggle('on', b.dataset.v === d.v));
+    const tip = document.getElementById('mx-instr-tip');
+    if (tip) tip.textContent = INSTR[d.v].tip;
+  },
   matchTactics: () => { stopMatchLoop(); UI.openModal(matchTacticsModal(S)); },
   matchTactic: d => { userClub(S.game)[d.k] = d.v; S.prep.userMatch.dirty = true; UI.updateModal(matchTacticsModal(S)); },
   pitchPick: d => {
