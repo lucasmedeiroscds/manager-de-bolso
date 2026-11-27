@@ -37,6 +37,9 @@ import { lifeScreen } from './ui/life-screen.js';
 import { answerEvent } from './engine/events.js';
 import { setCaptain, setTaker } from './engine/setpieces.js';
 import { lockerScreen } from './ui/locker-screen.js';
+import { reportModal } from './ui/report-screen.js';
+import { opponentReport } from './engine/report.js';
+import { exportBackup, pickBackup } from './backup.js';
 import * as LIFE from './engine/life.js';
 import * as Notif from './ui/notify.js';
 import { checkAchievements } from './engine/achievements.js';
@@ -815,14 +818,23 @@ const ACTIONS = {
     if (!g) return UI.toast('Não foi possível carregar.');
     S.game = g; go('hub'); UI.toast('Jogo carregado.');
   },
-  exportSave: () => {
-    const uc = userClub(S.game);
-    downloadFile(`jogo-${uc.short}-${S.game.season}-s${S.game.round + 1}.json`, JSON.stringify(S.game));
+  exportSave: async () => {
+    const r = await busy('Preparando o backup…', () => exportBackup(S.game));
+    if (r.r === 'cancel') { delete S.game.lastBackup; return; }
+    autosave();
+    UI.toast(r.r === 'shared' ? `💾 Backup enviado (${(r.size / 1e6).toFixed(1)} MB). Guarde bem!` : `💾 Backup salvo nos downloads: ${r.name} (${(r.size / 1e6).toFixed(1)} MB).`, 5000);
+    render(true);
+  },
+  openReport: d => UI.openModal(reportModal(S, d.id)),
+  applyReport: d => {
+    const r = opponentReport(S.game, S.game.clubs.find(c => c.id === d.id)), uc = userClub(S.game);
+    Object.assign(uc, r.apply || {});
+    UI.closeModal(); UI.toast('📋 Ajustes aplicados: ' + Object.values(r.apply || {}).join(' · '), 3500); autosave(); render(true);
   },
   importSave: async () => {
     try {
-      const f = await pickFile('.json,application/json');
-      S.game = migrate(JSON.parse(f.text));
+      const text = await pickBackup();
+      S.game = migrate(JSON.parse(text));
       autosave(); go('hub'); UI.toast('Jogo importado!');
     } catch (e) { UI.toast('Erro: ' + e.message, 4000); }
   },

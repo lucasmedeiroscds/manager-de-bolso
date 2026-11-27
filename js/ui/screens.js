@@ -13,6 +13,8 @@ import { squadRoles, moodOf, ROLE_LABEL } from '../engine/morale.js';
 import { isPlayerMode } from '../engine/player-career.js';
 import { challengeBanner } from './modes-screen.js';
 import { eventView } from '../engine/events.js';
+import { weatherFor, weatherLine } from '../engine/weather.js';
+import { needsBackupReminder, weeksSinceBackup } from '../backup.js';
 import { KINDS, takerScore, captainOf, leadership, pickTaker } from '../engine/setpieces.js';
 
 // Capitão e cobradores (tela Tática)
@@ -202,11 +204,13 @@ export function hubScreen(S) {
       ${dn ? `<div class="derby-line"><span class="tag derby">🔥 CLÁSSICO · ${esc(dn)}</span><div class="tiny muted" style="margin-top:4px">Seu retrospecto: ${hh.w}V ${hh.d}E ${hh.l}D · vale mais para a diretoria e a torcida</div></div>` : ''}
       <div class="mh-meta">
         <span>${icon('stadium', 15)} ${where}${h.stadiumName && !nm.neutral ? ' · ' + esc(h.stadiumName) : ''}</span>
+        <span>${(() => { const w = weatherFor(g, h, g.round, nm.kind === 'cup' ? 'C' : 'L'); return `<span title="${esc(w.desc)}">${esc(weatherLine(w))}</span>`; })()}</span>
         ${nm.kind === 'league' && g.round ? `<span>${icon('chart', 15)} Rival em ${oppInfo.replace(', ', '')}</span>` : oppInfo ? `<span>${oppInfo}</span>` : ''}
       </div>
       <div class="strength"><b>${sh}</b><div><div class="duel"><i style="width:${sharePct}%"></i></div><div class="tiny muted center" style="margin-top:3px">FORÇA DOS TIMES</div></div><b>${sa}</b></div>
       ${nm.kind === 'cup' ? `<p class="tiny muted center" style="position:relative">Meio de semana${userFixture(g) ? ' · o jogo da liga vem depois' : ''}${!nm.stage.startsWith('Grupo') ? ' · empate vai para os pênaltis' : ''}</p>` : ''}
       <button class="btn-main" data-act="playRound">${icon('play', 20)} Jogar partida</button>
+      ${isPlayerMode(g) ? '' : `<button class="btn-block btn-sm mt btn-ghost" data-act="openReport" data-id="${opp.id}">📋 Relatório do adversário</button>`}
       <button class="btn-block btn-sm mt btn-ghost" data-act="quickSim">${icon('fast', 16)} Simulação rápida (para no que importa)</button>
       ${isPlayerMode(g) ? `<p class="tiny muted center" style="position:relative;margin:8px 0 0">Você: <b>${esc(g.pc.role)}</b> · quem escala é o técnico</p>` : `<button class="btn-block btn-sm mt btn-ghost" data-act="go" data-to="tactics">${icon('tactics', 16)} Ajustar escalação</button>`}
     </div>`;
@@ -244,6 +248,7 @@ export function hubScreen(S) {
   </div>
   ${challengeBanner(g)}
   ${eventCard(g)}
+  ${needsBackupReminder(g) ? `<div class="challenge-line" style="border-color:rgba(46,230,255,.45);background:rgba(46,230,255,.06)"><span style="font-size:22px">💾</span><div class="grow"><div class="tiny muted">BACKUP</div><b class="small">${weeksSinceBackup(g) == null ? 'Você ainda não fez backup do jogo.' : `Último backup há ${weeksSinceBackup(g)} semanas.`}</b><div class="tiny muted">Se o navegador for limpo, o save se perde.</div></div><button class="btn-sm" data-act="exportSave">Fazer</button></div>` : ''}
   ${next}
   ${isPlayerMode(g) ? pcCard(S) : careerCard(S)}
   ${cupsCard}
@@ -816,7 +821,7 @@ export function moreScreen(S) {
     <div class="list stagger">
       ${it('saveMenu', 'save', 'Salvar jogo', '3 espaços + salvamento automático')}
       ${it('loadMenu', 'folder', 'Carregar jogo', '')}
-      ${it('exportSave', 'upload', 'Exportar jogo', 'Backup em arquivo')}
+      ${it('exportSave', 'upload', 'Fazer backup', 'Arquivo compacto: mande para o WhatsApp, Drive ou e-mail')}
     </div>
     <h3>Banco de dados</h3>
     <div class="list stagger">

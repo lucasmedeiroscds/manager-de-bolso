@@ -30,6 +30,7 @@ import { updateRanking } from './ranking.js';
 import { rollEvents, applyFix, afterFixMatch, weeklyEvents } from './events.js';
 import { weeklyCaptain } from './setpieces.js';
 import { weeklyLocker } from './locker.js';
+import { weatherFor } from './weather.js';
 import { isPlayerMode, pcLineup, afterPcMatch, weeklyPc } from './player-career.js';
 
 export const SAVE_VERSION = 2;
@@ -195,6 +196,7 @@ export function prepareRound(game) {
       const pos = table.findIndex(s => s.id === h.id) + 1;
       m.attendance = attendance(h, a, pos, l.clubIds.length);
       m.derby = derbyName(h, a);
+      m.weather = weatherFor(game, h, game.round, 'L');
       if (m.derby) m.attendance = Math.min(h.stadium, Math.round(m.attendance * 1.3)); // clássico lota
       m.income = m.attendance * h.ticketPrice;
       m.leagueId = l.id;
@@ -229,6 +231,7 @@ function prepareCupPhase(game) {
     // Copa atrai mais público nas fases finais
     const boost = c.knockout ? (c.stage === 'Final' ? 1.6 : c.stage === 'Semifinal' ? 1.35 : 1.15) : 1.1;
     m.derby = derbyName(h, a);
+    m.weather = weatherFor(game, h, game.round, 'C');
     m.attendance = Math.min(h.stadium, Math.round(attendance(h, a, pos, table.length || 20) * boost * (m.derby ? 1.3 : 1)));
     m.income = m.attendance * h.ticketPrice;
     m.leagueId = c.cup.id;          // "outros jogos" da mesma copa

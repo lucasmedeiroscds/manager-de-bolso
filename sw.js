@@ -4,7 +4,7 @@
 // Ao mudar qualquer arquivo do jogo, aumente o número da VERSAO
 // para o celular baixar a versão nova.
 // =============================================================
-const VERSAO = 'manager-v19';
+const VERSAO = 'manager-v20';
 const ARQUIVOS = [
   './', './index.html', './manifest.webmanifest', './icon.svg', './icon-192.png', './icon-512.png',
   './css/style.css', './data/mundo.json',
@@ -18,7 +18,7 @@ const ARQUIVOS = [
   './js/engine/records.js',
   './js/engine/press.js', './js/engine/interviews.js',
   './js/engine/derbies.js', './js/engine/achievements.js', './js/ui/achievements-screen.js',
-  './js/engine/academy.js', './js/engine/staff.js', './js/engine/legends.js', './js/ui/clubdev-screen.js', './js/ui/notify.js', './js/engine/modes.js', './js/engine/fans.js', './js/engine/ranking.js', './js/ui/modes-screen.js', './js/ui/share.js', './js/engine/life.js', './js/engine/events.js', './js/engine/setpieces.js', './js/engine/events-more.js', './js/engine/locker.js', './js/ui/locker-screen.js', './js/ui/life-screen.js',
+  './js/engine/academy.js', './js/engine/staff.js', './js/engine/legends.js', './js/ui/clubdev-screen.js', './js/ui/notify.js', './js/engine/modes.js', './js/engine/fans.js', './js/engine/ranking.js', './js/ui/modes-screen.js', './js/ui/share.js', './js/engine/life.js', './js/engine/events.js', './js/engine/setpieces.js', './js/engine/events-more.js', './js/engine/locker.js', './js/engine/weather.js', './js/engine/report.js', './js/ui/report-screen.js', './js/backup.js', './js/ui/locker-screen.js', './js/ui/life-screen.js',
   './js/ui/news-screen.js',
   './js/engine/player-career.js',
   './js/ui/player-career-screen.js',

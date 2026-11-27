@@ -51,6 +51,7 @@ const CORRIDOR = {
 const SHOOT_W = { GOL: 0, ZAG: 0.7, LAT: 0.9, VOL: 1.3, MEI: 3, ATA: 5 };
 
 import { pickTaker, headerScore, captainOf, leadership } from './setpieces.js';
+import { weatherFx, weatherLine } from './weather.js';
 
 export class Match {
   // home/away: objetos de clube. game: estado completo do jogo.
@@ -254,6 +255,12 @@ export class Match {
   }
 
   P(id) { return this.game.players[id]; }
+  // efeito do clima/gramado/altitude em cada time (calculado uma vez)
+  wfx(i) {
+    if (!this.weather || i < 0) return { mid: 1, shot: 1, tire: 1 };
+    if (!this._wf) this._wf = this.teams.map(t => weatherFx(this.weather, t.club, t.isHome));
+    return this._wf[i];
+  }
   // Time controlado pelo usuário (no modo carreira de jogador, quem escala é a IA)
   human(t) { return t.club.id === this.userClubId && !this.pcId && !this.game.quickSim; }
 
@@ -278,6 +285,7 @@ export class Match {
     const fx = (this.talkFx && this.talkFx[ti]) || {}; // conversa do técnico
     const ins = INSTR[(this.instr && this.instr[ti]) || 'normal'];
     const thr = this.fixSide === ti && ti >= 0 ? 0.55 : 1;   // esquema de apostas: o time entrega o jogo
+    const wf = this.wfx(ti);
     let cap;
     // capitão em campo puxa a reação quando o time perde no 2º tempo
     // entrosamento do vestiário (só o clube do usuário tem esse cálculo)
@@ -285,7 +293,7 @@ export class Match {
     else cap = 1;
     if (this.teams && ti >= 0 && this.minute >= 55 && t.goals < this.teams[1 - ti].goals && t.capId && t.onField.some(x => x.id === t.capId)) cap *= 1 + 0.05 * (t.capL || 0);
     return {
-      att: att * st.att * h * (fx.att || 1) * ins.att * thr * cap, mid: mid * st.mid * h * (fx.mid || 1) * ins.mid * thr * cap, def: def * st.def * mk.def * (fx.def || 1) * ins.def * thr, gk: gk * thr,
+      att: att * st.att * h * (fx.att || 1) * ins.att * thr * cap, mid: mid * st.mid * h * (fx.mid || 1) * ins.mid * thr * cap * wf.mid, def: def * st.def * mk.def * (fx.def || 1) * ins.def * thr, gk: gk * thr,
       cenShare: cen / ((cen + wide) || 1),                 // ~0,5 em formações equilibradas
       pas: pas / Math.max(1, t.onField.length)
     };
@@ -313,6 +321,10 @@ export class Match {
     if (this.pcPending) this.resolvePc('auto'); // pulou o lance (ex.: "Fim")
     this.minute++;
     if (this.minute === 1) this.log('info', -1, 'Bola rolando! Começa a partida.');
+    if (this.minute === 1 && this.mine && this.weather) this.log('info', -1, `${weatherLine(this.weather)}. ${this.weather.desc}`);
+    if (this.mine && this.weather && (this.weather.key === 'chuva' || this.weather.key === 'forte') && this.minute % 20 === 7 && rnd() < 0.5) this.log('play', this.poss || 0, pick(['A bola espirra na poça d\'água e engana a marcação!', 'Jogador escorrega no gramado molhado...', 'Que dificuldade para dominar a bola com essa chuva!']));
+    if (this.mine && this.weather && this.weather.alt >= 2000 && this.minute === 70) this.log('info', -1, '⛰️ A altitude cobra o preço: o time visitante está com as pernas pesadas.');
+    if (this.mine && this.weather && this.weather.key === 'calor' && this.minute === 30) this.log('info', -1, '🥵 Parada técnica para hidratação: o calor está castigando.');
 
     // Forças recalculadas a cada 5 minutos (cansaço muda devagar) ou após
     // substituição/expulsão (this.dirty) — economiza muito processamento
@@ -479,7 +491,7 @@ export class Match {
     else if (mates.length && rnd() < 0.8) this.log('play', i, pick(BUILD)(this.P(pick(mates).id).name, shooter.name));
 
     const fin = shooter.attrs.fin * (0.65 + 0.35 * shooter.fitness / 100);
-    const onTarget = rnd() < clamp(K.ON_TARGET * (0.5 + q) * (0.6 + fin / 175) * (mods.on || 1), 0.1, 0.85);
+    const onTarget = rnd() < clamp(K.ON_TARGET * (0.5 + q) * (0.6 + fin / 175) * (mods.on || 1) * this.wfx(i).shot, 0.1, 0.85);
     if (!onTarget) {
       if (rnd() < (t.club.focus === 'Pelas laterais' ? 0.5 : 0.35)) { t.stats.corners++; if (rnd() < 0.3) this.cornerKick(i); }
       if (rnd() < 0.45) this.log('chance', i, pick(MISS)(shooter.name, t.club.short)).spot = spot;
@@ -689,7 +701,7 @@ export class Match {
         // (e não depende da resistência, que é baixa no cadastro de goleiros)
         const loss = slot === 'GOL'
           ? K.TIRE * 0.22
-          : K.TIRE * st.tire * mk.tire * (this.talkFx[this.teams.indexOf(t)].tire || 1) * INSTR[this.instr[this.teams.indexOf(t)]].tire * (1.4 - p.attrs.res / 100);
+          : K.TIRE * st.tire * mk.tire * (this.talkFx[this.teams.indexOf(t)].tire || 1) * INSTR[this.instr[this.teams.indexOf(t)]].tire * (1.4 - p.attrs.res / 100) * this.wfx(this.teams.indexOf(t)).tire;
         p.fitness = Math.max(10, p.fitness - loss);
       }
     }
