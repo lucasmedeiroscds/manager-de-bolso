@@ -23,7 +23,7 @@ export const K = {
   ATTACK: 0.20,      // chance base de uma investida por minuto (parte vira desarme)
   POWER: 2.4,        // quanto a diferença de força pesa (maior = favoritos ganham mais)
   ON_TARGET: 0.40,   // chance base de a finalização ir no gol
-  GOAL: 0.32,      // chance base de uma finalização no gol virar gol
+  GOAL: 0.27,     // chance base de uma finalização no gol virar gol
   HOME: 1.08,        // vantagem de jogar em casa
   YELLOW: 0.021,     // amarelos por minuto por time
   RED: 0.0006,       // vermelho direto por minuto por time
@@ -49,6 +49,8 @@ const CORRIDOR = {
 
 // Quem costuma finalizar (peso por vaga)
 const SHOOT_W = { GOL: 0, ZAG: 0.7, LAT: 0.9, VOL: 1.3, MEI: 3, ATA: 5 };
+
+import { pickTaker, headerScore, captainOf, leadership } from './setpieces.js';
 
 export class Match {
   // home/away: objetos de clube. game: estado completo do jogo.
@@ -157,13 +159,19 @@ export class Match {
     const lines = [];
     const diff = t.goals - o.goals;
     if (diff === 0) lines.push('Tudo igual! O jogo recomeça do zero.');
-    if (diff === 1 && this.wasBehind[i]) lines.push('VIRADA! Que reação!');
+    if (diff === 1 && this.wasBehind[i]) lines.push((this.maxDef && this.maxDef[i] >= 2) ? 'VIRADA HISTÓRICA! Estava perdendo por dois!' : 'VIRADA! Que reação!');
+    if (this.minute >= 88 && diff === 0) lines.push('EMPATE NO APAGAR DAS LUZES!');
     if (this.minute >= 85) lines.push(diff >= 1 ? 'No finzinho! Gol que pode valer a vitória!' : 'Gol nos acréscimos da emoção!');
     if (t.scorers.filter(s => s.id === shooter.id).length === 3) lines.push(`HAT-TRICK de ${shooter.name}! Leva a bola para casa!`);
     if (diff === 3) lines.push('Goleada se desenhando!');
     lines.push(t.isHome ? 'A torcida explode no estádio!' : pick(['Silêncio nas arquibancadas...', 'A torcida visitante faz a festa no seu cantinho!']));
     this.log('color', i, '🎙️ ' + lines.slice(0, 2).join(' '));
     if (t.goals > o.goals) this.wasBehind[1 - i] = true; // o outro time ficou atrás no placar
+    // drama: maior desvantagem de cada time e minuto do último gol
+    this.maxDef = this.maxDef || [0, 0];
+    this.maxDef[0] = Math.max(this.maxDef[0], this.teams[1].goals - this.teams[0].goals);
+    this.maxDef[1] = Math.max(this.maxDef[1], this.teams[0].goals - this.teams[1].goals);
+    this.lastGoal = { side: i, min: this.minute, diff };
   }
 
   // Quem venceu? (0 mandante, 1 visitante, -1 empate) — conta os pênaltis
@@ -231,8 +239,9 @@ export class Match {
 
   buildTeam(club, isHome) {
     const slots = FORMATIONS[club.formation];
+    const cap = captainOf(this.game, club);
     return {
-      club, isHome,
+      club, isHome, capId: cap ? cap.id : null, capL: leadership(cap),
       onField: club.lineup.map((id, i) => ({ id, slot: slots[i] })).filter(x => x.id),
       bench: club.bench.slice(),
       used: new Set(club.lineup.filter(Boolean)),  // todos que entraram em campo
@@ -269,8 +278,14 @@ export class Match {
     const fx = (this.talkFx && this.talkFx[ti]) || {}; // conversa do técnico
     const ins = INSTR[(this.instr && this.instr[ti]) || 'normal'];
     const thr = this.fixSide === ti && ti >= 0 ? 0.55 : 1;   // esquema de apostas: o time entrega o jogo
+    let cap;
+    // capitão em campo puxa a reação quando o time perde no 2º tempo
+    // entrosamento do vestiário (só o clube do usuário tem esse cálculo)
+    if (t.club.chem != null && t.club.id === this.userClubId) cap = 1 + (t.club.chem - 50) / 1250;
+    else cap = 1;
+    if (this.teams && ti >= 0 && this.minute >= 55 && t.goals < this.teams[1 - ti].goals && t.capId && t.onField.some(x => x.id === t.capId)) cap *= 1 + 0.05 * (t.capL || 0);
     return {
-      att: att * st.att * h * (fx.att || 1) * ins.att * thr, mid: mid * st.mid * h * (fx.mid || 1) * ins.mid * thr, def: def * st.def * mk.def * (fx.def || 1) * ins.def * thr, gk: gk * thr,
+      att: att * st.att * h * (fx.att || 1) * ins.att * thr * cap, mid: mid * st.mid * h * (fx.mid || 1) * ins.mid * thr * cap, def: def * st.def * mk.def * (fx.def || 1) * ins.def * thr, gk: gk * thr,
       cenShare: cen / ((cen + wide) || 1),                 // ~0,5 em formações equilibradas
       pas: pas / Math.max(1, t.onField.length)
     };
@@ -328,7 +343,13 @@ export class Match {
       // Falta / cartão (marcação pesada faz mais faltas)
       const fi = INSTR[this.instr[i]].fouls;
       const cf = mk.fouls * (this.talkFx[i].cards || 1) * fi;
-      if (rnd() < 0.13 * mk.fouls * fi) t.stats.fouls++;
+      if (rnd() < 0.13 * mk.fouls * fi) {
+        t.stats.fouls++;
+        // falta de quem defende (i) perto da área: bola parada para o outro time
+        const r = rnd();
+        if (r < 0.012) this.penaltyKick(1 - i);
+        else if (r < 0.08) this.freeKick(1 - i);
+      }
       if (rnd() < K.YELLOW * cf * (this.derby ? 1.3 : 1)) this.card(i, t, false); // clássico é mais pegado
       else if (rnd() < K.RED * cf) this.card(i, t, true);
       // Lesão
@@ -345,6 +366,10 @@ export class Match {
     this.pressure.push(this._pm[0] - this._pm[1] + (this.poss === 0 ? 0.3 : -0.3));
     if ([15, 30, 60, 75].includes(this.minute)) this.atmosphere();
 
+    if (this.minute === 89 && this.mine) {
+      const add = 2 + Math.floor(rnd() * 5) + (Math.abs(this.teams[0].goals - this.teams[1].goals) <= 1 ? 1 : 0);
+      this.log('info', -1, `⏱️ O quarto árbitro levanta a placa: +${add} minutos de acréscimo!${Math.abs(this.teams[0].goals - this.teams[1].goals) <= 1 ? ' Muita emoção ainda!' : ''}`);
+    }
     if (this.minute === 45) this.log('half', -1, `Fim do primeiro tempo: ${this.score()}`);
     if (this.minute >= 90) {
       if (this.pcPending) this.resolvePc('auto');
@@ -456,7 +481,7 @@ export class Match {
     const fin = shooter.attrs.fin * (0.65 + 0.35 * shooter.fitness / 100);
     const onTarget = rnd() < clamp(K.ON_TARGET * (0.5 + q) * (0.6 + fin / 175) * (mods.on || 1), 0.1, 0.85);
     if (!onTarget) {
-      if (rnd() < (t.club.focus === 'Pelas laterais' ? 0.5 : 0.35)) t.stats.corners++;
+      if (rnd() < (t.club.focus === 'Pelas laterais' ? 0.5 : 0.35)) { t.stats.corners++; if (rnd() < 0.3) this.cornerKick(i); }
       if (rnd() < 0.45) this.log('chance', i, pick(MISS)(shooter.name, t.club.short)).spot = spot;
       return;
     }
@@ -482,9 +507,79 @@ export class Match {
       ev.spot = spot; ev.assistId = assist && assist.id; ev.scorerId = shooter.id;
       this.goalColor(i, t, o, shooter);
     } else {
-      if (rnd() < 0.3) t.stats.corners++;
+      if (rnd() < 0.3) { t.stats.corners++; if (rnd() < 0.3) this.cornerKick(i); }
       this.log('save', i, pick(SAVE)(shooter.name, gk ? gk.name : 'o goleiro')).spot = spot;
     }
+  }
+
+  // ---------- Bolas paradas ----------
+  // Gol de bola parada (mantém artilharia, assistência e animação)
+  spGoal(i, shooter, assist, text, spot) {
+    const t = this.teams[i], o = this.teams[1 - i];
+    t.goals++;
+    t.scorers.push({ min: this.minute, id: shooter.id, assist: assist && assist.id, sp: true });
+    this.shots.push({ side: i, min: this.minute, x: spot.x, d: spot.d, res: 'goal', id: shooter.id });
+    this._pm[i] += 3;
+    const ev = this.log('goal', i, `${text}  ${this.score()}`);
+    ev.spot = spot; ev.assistId = assist && assist.id; ev.scorerId = shooter.id;
+    this.goalColor(i, t, o, shooter);
+  }
+  gkOf(o) { const g = o.onField.find(x => x.slot === 'GOL'); return g ? this.P(g.id) : null; }
+  onIds(t) { return t.onField.map(x => x.id); }
+
+  penaltyKick(i) {
+    const t = this.teams[i], o = this.teams[1 - i];
+    const p = pickTaker(this.game, t.club, 'pen', this.onIds(t));
+    if (!p) return;
+    const gk = this.gkOf(o), gkR = gk ? overall(gk, 'GOL') : 15;
+    t.stats.shots++; t.stats.onTarget++;
+    this.log('chance', i, `🎯 PÊNALTI para o ${t.club.short}! ${p.name} vai para a cobrança...`);
+    const calm = p.id === t.capId ? 0.03 : 0;
+    const pGoal = clamp(0.62 + (p.attrs.fin - 60) / 220 + (p.moral - 60) / 600 - (gkR - 65) / 320 + calm, 0.5, 0.9);
+    const spot = { x: 50, d: 0.11 };
+    if (rnd() < pGoal) this.spGoal(i, p, null, `⚽ ${p.name} bate o pênalti e converte! Goleiro para um lado, bola para o outro.`, spot);
+    else if (rnd() < 0.65) { this.shots.push({ side: i, min: this.minute, ...spot, res: 'save', id: p.id }); this.log('save', i, `🧤 ${gk ? gk.name : 'O goleiro'} DEFENDE o pênalti de ${p.name}!`); }
+    else { t.stats.onTarget--; this.shots.push({ side: i, min: this.minute, ...spot, res: 'miss', id: p.id }); this.log('chance', i, `❌ ${p.name} chuta o pênalti para fora!`); }
+  }
+
+  freeKick(i) {
+    const t = this.teams[i], o = this.teams[1 - i];
+    const p = pickTaker(this.game, t.club, 'fk', this.onIds(t));
+    if (!p) return;
+    const gk = this.gkOf(o), gkR = gk ? overall(gk, 'GOL') : 15;
+    // metade bate direto, metade cruza na área
+    if (rnd() < 0.5) {
+      t.stats.shots++;
+      const skill = (p.attrs.fin + p.attrs.pas) / 2;
+      const spot = { x: clamp(50 + (rnd() - 0.5) * 30, 20, 80), d: 0.22 };
+      const on = rnd() < clamp(0.3 + (skill - 60) / 200, 0.18, 0.5);
+      if (!on) { this.shots.push({ side: i, min: this.minute, ...spot, res: 'miss', id: p.id }); if (this.mine) this.log('chance', i, `🌀 Falta perigosa! ${p.name} cobra por cima da barreira... e da trave.`); return; }
+      t.stats.onTarget++;
+      if (rnd() < clamp(0.2 + (skill - 60) / 160 - (gkR - 65) / 250, 0.1, 0.42)) this.spGoal(i, p, null, `⚽ GOLAÇO DE FALTA! ${p.name} coloca a bola no ângulo!`, spot);
+      else { this.shots.push({ side: i, min: this.minute, ...spot, res: 'save', id: p.id }); this.log('save', i, `🌀 ${p.name} cobra a falta com efeito, ${gk ? gk.name : 'o goleiro'} espalma!`); }
+    } else this.aerial(i, p, 'falta');
+  }
+
+  cornerKick(i) { const t = this.teams[i]; const p = pickTaker(this.game, t.club, 'ck', this.onIds(t)); if (p) this.aerial(i, p, 'escanteio'); }
+
+  // Bola alçada na área: quem cobra (passe) x quem cabeceia (força) x defesa
+  aerial(i, taker, what) {
+    const t = this.teams[i], o = this.teams[1 - i];
+    const heads = t.onField.filter(x => x.id !== taker.id && x.slot !== 'GOL').map(x => this.P(x.id));
+    if (!heads.length) return;
+    const h = heads.sort((a, b) => headerScore(b) - headerScore(a))[Math.floor(rnd() * Math.min(3, heads.length))];
+    const defs = o.onField.filter(x => x.slot === 'ZAG' || x.slot === 'VOL').map(x => this.P(x.id));
+    const defAir = defs.length ? defs.reduce((s, d) => s + d.attrs.for * 0.5 + d.attrs.def * 0.5, 0) / defs.length : 50;
+    const cross = taker.attrs.pas;
+    const win = clamp(0.3 + (cross - 60) / 250 + (headerScore(h) - defAir) / 180, 0.12, 0.55);
+    if (rnd() > win) { if (this.mine && rnd() < 0.5) this.log('tackle', 1 - i, `🚩 ${what === 'falta' ? 'Cobrança de falta' : 'Escanteio'} de ${taker.name}, a defesa do ${o.club.short} afasta.`); return; }
+    t.stats.shots++;
+    const spot = { x: clamp(50 + (rnd() - 0.5) * 20, 30, 70), d: 0.08 };
+    const gk = this.gkOf(o), gkR = gk ? overall(gk, 'GOL') : 15;
+    if (rnd() < 0.45) { this.shots.push({ side: i, min: this.minute, ...spot, res: 'miss', id: h.id }); if (this.mine) this.log('chance', i, `🚩 ${taker.name} cobra, ${h.name} sobe e cabeceia para fora!`); return; }
+    t.stats.onTarget++;
+    if (rnd() < clamp(0.3 + (headerScore(h) - 60) / 200 - (gkR - 65) / 250, 0.15, 0.5)) this.spGoal(i, h, taker, `⚽ GOL DE CABEÇA! ${taker.name} cobra ${what === 'falta' ? 'a falta' : 'o escanteio'} e ${h.name} testa para o fundo da rede!`, spot);
+    else { this.shots.push({ side: i, min: this.minute, ...spot, res: 'save', id: h.id }); this.log('save', i, `🚩 ${h.name} cabeceia firme e ${gk ? gk.name : 'o goleiro'} defende!`); }
   }
 
   // Frase de jogo corrido (posse, toques, faltas) — muda com a instrução

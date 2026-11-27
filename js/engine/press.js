@@ -40,11 +40,22 @@ export function matchHeadline(game, m) {
   else if (res === 'draw') { title = pick([`${us} e ${them} ficam no ${sc}`, `Tudo igual entre ${us} e ${them}`, `Empate: ${us} não sai do ${sc} contra o ${them}`]); tone = ''; }
   else if (diff <= -3) { title = pick([`Vexame! ${us} é goleado pelo ${them}`, `Noite para esquecer: ${them} ${o.goals} x ${t.goals} ${us}`, `Crise? ${us} leva ${o.goals} do ${them}`]); tone = 'bad'; }
   else { title = pick([`${us} perde para o ${them}${pens}`, `${them} vence e complica a vida do ${us}`, `Derrota: ${us} cai diante do ${them}`]); tone = 'bad'; }
+  // drama: viradas, gols no fim e zebras
+  const md = m.maxDef || [0, 0], lg = m.lastGoal;
+  const late = lg && lg.min >= 85;
+  if (res === 'win' && md[c.i] >= 2) { title = `VIRADA HISTÓRICA! ${us} perdia por ${md[c.i]} gols e vence o ${them}`; tone = 'good'; }
+  else if (res === 'win' && m.wasBehind && m.wasBehind[c.i]) title = pick([`Virada! ${us} sai atrás e vence o ${them}`, `De virada: ${us} bate o ${them} por ${sc}`]);
+  else if (res === 'win' && late && lg.side === c.i && diff === 1) title = `No último suspiro! ${us} vence o ${them} aos ${lg.min}'`;
+  else if (res === 'draw' && late && lg.side === c.i) title = `${us} arranca o empate no fim contra o ${them}`;
+  else if (res === 'draw' && late && lg.side !== c.i) title = `Balde de água fria: ${us} sofre o empate aos ${lg.min}'`;
+  else if (res === 'loss' && late && lg.side !== c.i && diff === -1) title = `Drama no fim: ${us} leva gol aos ${lg.min}' e perde para o ${them}`;
+  if (res === 'win' && (o.club.rep || 0) - (t.club.rep || 0) >= 20 && md[c.i] < 2) title = `MILAGRE! ${title}`;
   if (m.derby) title = `${m.derby}: ${title}`;
   let text = m.cupName ? `${m.cupName} · ${m.stage}.` : 'Pela liga.';
   if (star) text += ` Destaque para ${star.name}, autor de ${c.starGoals} gols.`;
   else if (t.scorers.length) text += ` Gols de ${[...new Set(t.scorers.map(s => game.players[s.id] && game.players[s.id].name))].filter(Boolean).join(', ')}.`;
   if (t.stats.red) text += ' O time ainda teve um expulso.';
+  if (res === 'loss' && t.goals === 1 && diff <= -2) text += ' Só deu tempo do gol de honra.';
   return { title, text, tone };
 }
 

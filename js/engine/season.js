@@ -28,6 +28,8 @@ import { checkLegends } from './legends.js';
 import { fansAfterMatch } from './fans.js';
 import { updateRanking } from './ranking.js';
 import { rollEvents, applyFix, afterFixMatch, weeklyEvents } from './events.js';
+import { weeklyCaptain } from './setpieces.js';
+import { weeklyLocker } from './locker.js';
 import { isPlayerMode, pcLineup, afterPcMatch, weeklyPc } from './player-career.js';
 
 export const SAVE_VERSION = 2;
@@ -286,6 +288,8 @@ export function finishRound(game, prep) {
   if (prep.userMatch) afterFixMatch(game, prep.userMatch, null).forEach(m => inbox(game, m));
   weeklyFinances(game, homeGames);
   weeklyEvents(game).forEach(m => inbox(game, m));
+  weeklyCaptain(game);
+  weeklyLocker(game, prep.userMatch).forEach(m => inbox(game, m));
   weeklyEvolution(game).forEach(m => inbox(game, m));
   refreshValues(game);
   // Carreira: reação da diretoria/torcida ao jogo e avaliação semanal

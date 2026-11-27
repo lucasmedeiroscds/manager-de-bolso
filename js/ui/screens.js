@@ -13,6 +13,23 @@ import { squadRoles, moodOf, ROLE_LABEL } from '../engine/morale.js';
 import { isPlayerMode } from '../engine/player-career.js';
 import { challengeBanner } from './modes-screen.js';
 import { eventView } from '../engine/events.js';
+import { KINDS, takerScore, captainOf, leadership, pickTaker } from '../engine/setpieces.js';
+
+// Capitão e cobradores (tela Tática)
+function setPiecesCard(g, uc) {
+  const xi = uc.lineup.filter(Boolean);
+  const squad = Object.values(g.players).filter(p => p.clubId === uc.id && !p.loan).sort((a, b) => overall(b) - overall(a));
+  const cap = captainOf(g, uc);
+  const opt = (sel, list, val) => list.map(p => `<option value="${p.id}" ${sel === p.id ? 'selected' : ''}>${esc(p.name)} · ${val(p)}</option>`).join('');
+  return `<h3>Capitão e bolas paradas</h3>
+  <div class="card">
+    <label>©️ Capitão <span class="tiny muted">(liderança: ${cap ? Math.round(leadership(cap) * 100) : 0})</span></label>
+    <select data-change="captain"><option value="">Automático (${cap ? esc(cap.name) : '—'})</option>${opt(uc.captain, squad, p => 'liderança ' + Math.round(leadership(p) * 100))}</select>
+    ${KINDS.map(([k, e, l]) => { const auto = pickTaker(g, uc, k, xi); return `<label>${e} ${l}</label>
+    <select data-change="taker" data-kind="${k}"><option value="">Automático (${auto ? esc(auto.name) : '—'})</option>${opt(uc.takers && uc.takers[k], squad.filter(p => p.pos !== 'GOL'), p => Math.round(takerScore(p, k)))}</select>`; }).join('')}
+    <p class="tiny muted mt" style="margin-bottom:0">O capitão segura a moral do grupo na semana e puxa a reação quando o time perde no 2º tempo. Tirar a faixa de alguém deixa ele chateado. Cobradores: o número é a nota para aquela cobrança; se o escolhido não estiver em campo, bate o melhor disponível.</p>
+  </div>`;
+}
 
 // Evento aleatório esperando a sua decisão
 export function eventCard(g) {
@@ -298,7 +315,7 @@ export function squadScreen(S) {
   const avgAge = (ps.reduce((s, p) => s + p.age, 0) / (ps.length || 1)).toFixed(1);
   const withOffers = ps.filter(p => offersFor(g, p.id).length);
   return `
-  <div class="row between"><h1>Elenco</h1>${isPlayerMode(g) ? '' : `<button class="btn-sm" data-act="go" data-to="clubdev">${icon('star', 15)} Base e comissão</button>`}</div>
+  <div class="row between"><h1>Elenco</h1>${isPlayerMode(g) ? '' : `<div class="row" style="gap:6px"><button class="btn-sm" data-act="go" data-to="locker">${icon('users', 15)} Vestiário</button><button class="btn-sm" data-act="go" data-to="clubdev">${icon('star', 15)} Base</button></div>`}</div>
   ${withOffers.length ? `<div class="offer-banner" data-act="go" data-to="market" data-tab="offers">${icon('bell', 18)}
     <div class="grow"><b>${withOffers.length} jogador(es) com proposta de compra</b><div class="tiny muted">Toque no jogador para aceitar ou recusar</div></div>${icon('chevron', 18, 'chev')}</div>` : ''}
   <div class="tiles">
@@ -466,6 +483,7 @@ export function tacticsScreen(S) {
     }).join('')}
   </div>
   ${tacticChips(uc)}
+  ${setPiecesCard(g, uc)}
   <h3>Treino da semana</h3>
   <div class="card">
     <label>Foco</label>

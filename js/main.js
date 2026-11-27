@@ -35,6 +35,8 @@ import { DIFFS, applyDifficulty, applyChallenge, challengeClub, checkChallenge, 
 import { shareCareer } from './ui/share.js';
 import { lifeScreen } from './ui/life-screen.js';
 import { answerEvent } from './engine/events.js';
+import { setCaptain, setTaker } from './engine/setpieces.js';
+import { lockerScreen } from './ui/locker-screen.js';
 import * as LIFE from './engine/life.js';
 import * as Notif from './ui/notify.js';
 import { checkAchievements } from './engine/achievements.js';
@@ -93,7 +95,7 @@ const SCREENS = {
   start: SC.startScreen, chooseClub: SC.chooseClubScreen, hub: SC.hubScreen,
   squad: SC.squadScreen, tactics: SC.tacticsScreen, table: SC.tableScreen,
   market: SC.marketScreen, finance: SC.financeScreen, more: SC.moreScreen,
-  match: matchScreen, roundSummary: roundSummaryScreen, awards: awardsScreen, records: recordsScreen, newPlayer: newPlayerScreen, news: newsScreen, achievements: achievementsScreen, challenges: challengesScreen, life: lifeScreen, ranking: rankingScreen, clubdev: clubdevScreen, pcareer: pcareerScreen, career: careerScreen, nations: nationsScreen, settings: settingsScreen
+  match: matchScreen, roundSummary: roundSummaryScreen, awards: awardsScreen, records: recordsScreen, newPlayer: newPlayerScreen, news: newsScreen, achievements: achievementsScreen, challenges: challengesScreen, locker: lockerScreen, life: lifeScreen, ranking: rankingScreen, clubdev: clubdevScreen, pcareer: pcareerScreen, career: careerScreen, nations: nationsScreen, settings: settingsScreen
 };
 
 // Pergunta o nome do técnico ao começar um jogo novo (devolve null se cancelar)
@@ -865,6 +867,8 @@ document.addEventListener('change', e => {
   if (k === 'awardsLeague') go('awards', { ...S.params, league: e.target.value });
   if (k === 'awardsSeason') go('awards', { ...S.params, season: e.target.value });
   if (k === 'npName') { S.np.name = e.target.value; return; }
+  if (k === 'captain') { const uc = userClub(S.game); if (e.target.value) UI.toast(setCaptain(S.game, uc, e.target.value).msg, 4000); else delete uc.captain; autosave(); render(true); }
+  if (k === 'taker') { setTaker(userClub(S.game), e.target.dataset.kind, e.target.value); autosave(); render(true); }
   if (k === 'verbose') { S.matchVerbose = e.target.checked; render(true); }
   if (k === 'volume') { S.settings.volume = Number(e.target.value); saveSettings(); Sound.whistle(1);
     const v = document.getElementById('vol-v'); if (v) v.textContent = Math.round(S.settings.volume * 100) + '%'; }

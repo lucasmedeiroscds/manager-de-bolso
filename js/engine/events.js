@@ -17,24 +17,27 @@ import { clamp, rnd, money } from '../util.js';
 import { addPress } from './press.js';
 import { addTx } from './finance.js';
 import { clubById } from './market.js';
+import { rollGeneric, genView, genAnswer, triggerMedical, relapseCheck } from './events-more.js';
 
 const msgIn = (game, text) => game.inbox.unshift({ id: 'ev' + Date.now() + Math.floor(rnd() * 1e4), type: 'msg', text, season: game.season, round: game.round });
 
-function evState(game) { return game.evState || (game.evState = { cool: 6 }); }
+function evState(game) { const s = game.evState || (game.evState = { cool: 6 }); if (s.gcool == null) s.gcool = 3; return s; }
 
 // ---------- Sorteio semanal de eventos ----------
 // nextMatch: { kind, name, stage, knockout } do próximo jogo do usuário (ou null)
 export function rollEvents(game, nextMatch) {
   const st = evState(game);
   if (game.pendingEvent) return;
-  if (st.cool > 0) { st.cool--; return; }
+  if (st.gcool > 0) st.gcool--;
+  if (st.cool > 0) { st.cool--; return rollGen(game, st); }
   if (game.mode === 'player') {
     const pc = game.pc;
-    if (pc.doping || pc.ban > 0 || rnd() > 0.035) return;
+    if (pc.doping || pc.ban > 0 || rnd() > 0.035) return rollGen(game, st);
     game.pendingEvent = { kind: 'doping', season: game.season, round: game.round, expires: game.round + 2 };
   } else {
     const c = game.coach;
-    if (!c || c.fired || !nextMatch || game.betRisk || rnd() > 0.03) return;
+    if (!c || c.fired) return;
+    if (!nextMatch || game.betRisk || rnd() > 0.03) return rollGen(game, st);
     const club = clubById(game, game.userClubId);
     const base = club.deal ? club.deal.base : club.sponsor;
     const amount = Math.round(base * (2.5 + rnd() * 2.5) / 100000) * 100000;
@@ -44,11 +47,19 @@ export function rollEvents(game, nextMatch) {
   st.cool = 12;
 }
 
+// Eventos de vestiário (mais comuns): ~1 a cada 6–8 semanas
+function rollGen(game, st) {
+  if (st.gcool > 0 || rnd() > 0.22) return;
+  const ev = rollGeneric(game);
+  if (ev) { game.pendingEvent = ev; st.gcool = 4; }
+}
+
 // ---------- Respostas ----------
 export function answerEvent(game, choice) {
   const ev = game.pendingEvent;
   if (!ev) return { msg: '' };
   game.pendingEvent = null;
+  if (ev.kind === 'gen') return genAnswer(game, ev, choice);
   if (ev.kind === 'doping') {
     const pc = game.pc, p = game.players[pc.id];
     if (choice === 'yes') {
@@ -91,6 +102,7 @@ export function applyFix(game, m) {
 // fixture: o confronto (copa) para poder desclassificar
 export function afterFixMatch(game, m, fixture) {
   const msgs = [];
+  if (triggerMedical(game, m)) msgs.push('🩺 O departamento médico precisa de uma decisão sua (veja no Início).');
   // doping: exame após cada jogo em que o jogador atuou
   if (game.mode === 'player' && game.pc.doping) {
     const pc = game.pc, p = game.players[pc.id];
@@ -143,7 +155,7 @@ function punish(game, received, where) {
 
 // ---------- Toda semana ----------
 export function weeklyEvents(game) {
-  const msgs = [];
+  const msgs = [...relapseCheck(game)];
   if (game.pendingEvent && game.round > game.pendingEvent.expires) { game.pendingEvent = null; msgs.push('A proposta suspeita caducou.'); }
   // suspensão do jogador atravessa a virada de temporada
   if (game.mode === 'player' && game.pc.ban > 0) {
@@ -177,6 +189,7 @@ export function weeklyEvents(game) {
 export function eventView(game) {
   const ev = game.pendingEvent;
   if (!ev) return null;
+  if (ev.kind === 'gen') return genView(game, ev);
   if (ev.kind === 'doping') return {
     emoji: '🧃', title: 'O "suco milagroso"',
     text: 'Um preparador de fora do clube oferece um suplemento que "faz o jogador voar". Ninguém precisa saber… mas o antidoping existe.',
